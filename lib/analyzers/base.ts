@@ -3,7 +3,7 @@
  */
 
 import { Analyzer, RawContent, Vibe } from '@/lib/types';
-import { mergeVibeOccurrence, suggestHalfLife } from '@/lib/temporal-decay';
+import { mergeVibeOccurrence, suggestHalfLife, applyMultipleHaloEffects } from '@/lib/temporal-decay';
 
 /**
  * Abstract base class for analyzers
@@ -22,11 +22,12 @@ export abstract class BaseAnalyzer implements Analyzer {
   }
 
   /**
-   * Helper to merge existing and new vibes with temporal decay
+   * Helper to merge existing and new vibes with temporal decay and halo effects
    * Override for custom merge logic
    */
   protected mergeVibes(existing: Vibe[], newVibes: Vibe[]): Vibe[] {
     const vibeMap = new Map<string, Vibe>();
+    const boostedVibes: Vibe[] = []; // Track vibes that were boosted (reappeared)
 
     // Add existing vibes
     for (const vibe of existing) {
@@ -39,14 +40,29 @@ export abstract class BaseAnalyzer implements Analyzer {
       const existingVibe = vibeMap.get(key);
 
       if (existingVibe) {
-        // Use temporal decay merge function
-        vibeMap.set(key, mergeVibeOccurrence(existingVibe, newVibe));
+        // Vibe reappeared! Merge and track for halo effect
+        const mergedVibe = mergeVibeOccurrence(existingVibe, newVibe);
+        vibeMap.set(key, mergedVibe);
+        boostedVibes.push(mergedVibe);
       } else {
         vibeMap.set(key, newVibe);
       }
     }
 
-    return Array.from(vibeMap.values());
+    let mergedVibes = Array.from(vibeMap.values());
+
+    // Apply halo effect: boosted vibes affect semantically similar vibes
+    if (boostedVibes.length > 0) {
+      console.log(`Applying halo effect for ${boostedVibes.length} boosted vibe(s)`);
+      mergedVibes = applyMultipleHaloEffects(
+        boostedVibes,
+        mergedVibes,
+        0.6,   // similarity threshold (0.6 = 60% similar)
+        0.15   // max halo boost (15% of strength)
+      );
+    }
+
+    return mergedVibes;
   }
 
   protected generateVibeId(name: string): string {

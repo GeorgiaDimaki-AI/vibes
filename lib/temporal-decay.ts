@@ -165,3 +165,144 @@ export function suggestHalfLife(vibe: Vibe): number {
 
   return baseHalfLife * strengthMultiplier * sentimentMultiplier * sourceMultiplier;
 }
+
+/**
+ * Calculate semantic similarity between two vibes using embeddings
+ */
+function cosineSimilarity(a: number[], b: number[]): number {
+  if (!a || !b || a.length !== b.length) return 0;
+
+  let dotProduct = 0;
+  let normA = 0;
+  let normB = 0;
+
+  for (let i = 0; i < a.length; i++) {
+    dotProduct += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+
+  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+/**
+ * Halo Effect: When a vibe reappears, boost semantically similar vibes
+ *
+ * Theory: If one vibe from a cultural cluster reappears, related vibes
+ * in that cluster are likely to also become relevant soon. This creates
+ * a "ripple effect" through the cultural graph.
+ *
+ * @param boostedVibe The vibe that was just boosted (reappeared)
+ * @param allVibes All vibes in the graph
+ * @param similarityThreshold Minimum similarity to apply halo (default: 0.6)
+ * @param maxHaloBoost Maximum boost to apply (default: 0.15)
+ * @returns Updated vibes with halo effect applied
+ */
+export function applyHaloEffect(
+  boostedVibe: Vibe,
+  allVibes: Vibe[],
+  similarityThreshold = 0.6,
+  maxHaloBoost = 0.15
+): Vibe[] {
+  if (!boostedVibe.embedding) {
+    // Can't apply halo without embeddings
+    return allVibes;
+  }
+
+  const now = new Date();
+
+  return allVibes.map(vibe => {
+    // Don't boost the vibe itself (already boosted)
+    if (vibe.id === boostedVibe.id) {
+      return vibe;
+    }
+
+    // Skip vibes without embeddings
+    if (!vibe.embedding) {
+      return vibe;
+    }
+
+    // Calculate semantic similarity
+    const similarity = cosineSimilarity(boostedVibe.embedding, vibe.embedding);
+
+    // Only apply halo if similarity is above threshold
+    if (similarity < similarityThreshold) {
+      return vibe;
+    }
+
+    // Calculate halo boost proportional to similarity
+    // similarity of 1.0 → maxHaloBoost
+    // similarity of threshold → small boost
+    const normalizedSimilarity = (similarity - similarityThreshold) / (1 - similarityThreshold);
+    const haloBoost = normalizedSimilarity * maxHaloBoost;
+
+    // Apply the boost
+    return {
+      ...vibe,
+      strength: Math.min(1.0, vibe.strength + haloBoost),
+      currentRelevance: Math.min(1.0, vibe.currentRelevance + haloBoost),
+      lastSeen: now, // Update lastSeen to prevent decay
+      // Track that this was a halo boost in metadata
+      metadata: {
+        ...vibe.metadata,
+        lastHaloBoost: {
+          from: boostedVibe.id,
+          amount: haloBoost,
+          similarity,
+          timestamp: now.toISOString(),
+        },
+      },
+    };
+  });
+}
+
+/**
+ * Apply halo effect for multiple boosted vibes
+ * Useful when multiple vibes reappear in the same collection cycle
+ */
+export function applyMultipleHaloEffects(
+  boostedVibes: Vibe[],
+  allVibes: Vibe[],
+  similarityThreshold = 0.6,
+  maxHaloBoost = 0.15
+): Vibe[] {
+  let updatedVibes = [...allVibes];
+
+  for (const boostedVibe of boostedVibes) {
+    updatedVibes = applyHaloEffect(
+      boostedVibe,
+      updatedVibes,
+      similarityThreshold,
+      maxHaloBoost
+    );
+  }
+
+  return updatedVibes;
+}
+
+/**
+ * Find semantically similar vibes (useful for graph visualization and analysis)
+ */
+export function findSimilarVibes(
+  targetVibe: Vibe,
+  allVibes: Vibe[],
+  topK = 10,
+  minSimilarity = 0.5
+): Array<{ vibe: Vibe; similarity: number }> {
+  if (!targetVibe.embedding) {
+    return [];
+  }
+
+  const similarities = allVibes
+    .filter(v => v.id !== targetVibe.id && v.embedding)
+    .map(vibe => ({
+      vibe,
+      similarity: cosineSimilarity(targetVibe.embedding!, vibe.embedding!),
+    }))
+    .filter(s => s.similarity >= minSimilarity)
+    .sort((a, b) => b.similarity - a.similarity)
+    .slice(0, topK);
+
+  return similarities;
+}
+
