@@ -3,22 +3,13 @@
  * Uses embeddings to cluster content and identify vibes through similarity
  */
 
-import OpenAI from 'openai';
 import { BaseAnalyzer } from './base';
 import { RawContent, Vibe } from '@/lib/types';
+import { getEmbeddingProvider } from '@/lib/embeddings';
 
 export class EmbeddingAnalyzer extends BaseAnalyzer {
   readonly name = 'embedding';
   readonly description = 'Uses embeddings to cluster and identify vibes';
-
-  private client: OpenAI;
-
-  constructor() {
-    super();
-    this.client = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
-  }
 
   async analyze(content: RawContent[]): Promise<Vibe[]> {
     if (content.length === 0) {
@@ -52,26 +43,13 @@ export class EmbeddingAnalyzer extends BaseAnalyzer {
   private async generateEmbeddings(content: RawContent[]): Promise<Array<{ idx: number; embedding: number[] }>> {
     const texts = content.map(c => `${c.title || ''} ${c.body || ''}`.slice(0, 2000));
 
-    const embeddings: Array<{ idx: number; embedding: number[] }> = [];
+    const embeddingProvider = await getEmbeddingProvider();
+    const rawEmbeddings = await embeddingProvider.generateEmbeddings(texts, { batchSize: 10 });
 
-    // Batch API calls
-    for (let i = 0; i < texts.length; i += 10) {
-      const batch = texts.slice(i, i + 10);
-
-      const response = await this.client.embeddings.create({
-        model: 'text-embedding-3-small',
-        input: batch,
-      });
-
-      response.data.forEach((item, batchIdx) => {
-        embeddings.push({
-          idx: i + batchIdx,
-          embedding: item.embedding,
-        });
-      });
-    }
-
-    return embeddings;
+    return rawEmbeddings.map((embedding, idx) => ({
+      idx,
+      embedding,
+    }));
   }
 
   private cosineSimilarity(a: number[], b: number[]): number {
