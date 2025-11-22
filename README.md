@@ -4,7 +4,10 @@ An agentic app that maintains a cultural graph of trends, vibes, and zeitgeist m
 
 ## Features
 
-- **Automated Data Collection**: Collects trends from news, Reddit, and other sources
+- **Local LLM Support**: Works with LM Studio or Ollama - no API costs!
+- **Temporal Decay System**: Trends naturally fade over time with configurable half-lives
+- **Automated Hourly Collection**: Continuously updates cultural graph with fresh data
+- **Smart Trend Retirement**: Old trends automatically decay based on category-specific timescales
 - **Cultural Graph**: Maintains a semantic graph of cultural vibes with embeddings
 - **Scenario Matching**: Uses LLM reasoning and semantic similarity to match situations to relevant vibes
 - **Personalized Advice**: Generates specific recommendations for topics, behavior, and style
@@ -67,16 +70,28 @@ Copy `.env.example` to `.env.local`:
 cp .env.example .env.local
 ```
 
-Edit `.env.local` and add your API keys:
+Edit `.env.local` and configure your LLM provider:
 
 ```env
-# Required
-ANTHROPIC_API_KEY=sk-ant-...
+# LLM Provider (choose one: lmstudio or ollama)
+LLM_PROVIDER=lmstudio
+
+# LM Studio (default: http://localhost:1234/v1)
+LMSTUDIO_BASE_URL=http://localhost:1234/v1
+LMSTUDIO_MODEL=local-model
+
+# OR Ollama (default: http://localhost:11434)
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=llama2
+
+# Required for embeddings
 OPENAI_API_KEY=sk-...
 
-# Optional (but recommended)
+# Optional: News Collection
 NEWS_API_KEY=...
 ```
+
+**Important**: You must have either LM Studio or Ollama running locally with a model loaded before starting the app.
 
 ### 3. Database Setup
 
@@ -120,8 +135,8 @@ curl http://localhost:3000/api/collect
 ```
 
 **Automated Collection:**
-- Deployed on Vercel, the app automatically collects data every 6 hours via cron
-- Configure the schedule in `vercel.json`
+- Deployed on Vercel, the app automatically collects data **every hour** via cron
+- Configure the schedule in `vercel.json` (default: `0 * * * *`)
 
 ### Checking Status
 
@@ -129,7 +144,37 @@ curl http://localhost:3000/api/collect
 curl http://localhost:3000/api/status
 ```
 
-Returns current graph statistics, categories, and recent vibes.
+Returns current graph statistics, categories, temporal decay metrics, and top vibes ranked by current relevance.
+
+## Temporal Decay System
+
+Trends don't last forever! The app includes a sophisticated temporal decay system:
+
+### How It Works
+
+- **Automatic Decay**: Vibes lose relevance over time based on exponential decay
+- **Category-Specific Half-Lives**: Different trend types decay at different rates
+  - Memes: 3 days
+  - Events: 7 days
+  - Trends: 14 days
+  - Topics: 21 days
+  - Sentiments: 30 days
+  - Aesthetics: 60 days
+  - Movements: 90 days
+
+### Continuous Evolution
+
+- **Boosting**: When a vibe appears again in new data, it gets boosted
+- **Smart Merging**: Re-detected vibes don't create duplicates but refresh existing ones
+- **Automatic Cleanup**: Vibes below 5% relevance are automatically filtered out
+- **Current Relevance**: All vibes have a time-adjusted relevance score
+
+### Benefits
+
+- Old trends don't pollute current advice
+- Popular recurring trends stay relevant
+- Natural transition between cultural moments
+- Clear distinction between emerging and fading vibes
 
 ## Modular Architecture
 

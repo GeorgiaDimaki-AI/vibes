@@ -13,8 +13,14 @@ import {
 } from './index';
 import { getGraphStore } from './graph';
 import { Scenario, Advice, Vibe, CollectorOptions } from './types';
-import Anthropic from '@anthropic-ai/sdk';
+import { getLLM } from './llm';
 import OpenAI from 'openai';
+import {
+  applyDecayToVibes,
+  filterDecayedVibes,
+  getTemporalStats,
+  sortByRelevance,
+} from './temporal-decay';
 
 export class ZeitgeistService {
   private initialized = false;
@@ -66,8 +72,14 @@ export class ZeitgeistService {
       ? await analyzer.update(existingVibes, rawContent)
       : vibesWithEmbeddings;
 
+    // Apply decay and filter out highly decayed vibes (below 5% relevance)
+    console.log('Applying temporal decay...');
+    const vibesWithDecay = applyDecayToVibes(mergedVibes);
+    const activeVibes = filterDecayedVibes(vibesWithDecay, 0.05);
+    console.log(`Filtered ${mergedVibes.length - activeVibes.length} decayed vibes`);
+
     // Save to store
-    await this.store.saveVibes(mergedVibes);
+    await this.store.saveVibes(activeVibes);
 
     return { vibesAdded: newVibes.length };
   }
@@ -113,9 +125,11 @@ export class ZeitgeistService {
       }
     }
 
-    const recentVibes = vibes
-      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
-      .slice(0, 10);
+    // Get temporal stats
+    const temporalStats = getTemporalStats(vibes);
+
+    // Get most relevant vibes (sorted by current relevance)
+    const topVibes = sortByRelevance(vibes).slice(0, 10);
 
     return {
       totalVibes: vibes.length,
@@ -123,10 +137,13 @@ export class ZeitgeistService {
       lastUpdated: graph.metadata.lastUpdated,
       categories: Object.fromEntries(categories),
       domains: Object.fromEntries(domains),
-      recentVibes: recentVibes.map(v => ({
+      temporal: temporalStats,
+      topVibes: topVibes.map(v => ({
         name: v.name,
         category: v.category,
         strength: v.strength,
+        currentRelevance: v.currentRelevance,
+        daysSinceLastSeen: Math.floor((new Date().getTime() - v.lastSeen.getTime()) / (1000 * 60 * 60 * 24)),
         timestamp: v.timestamp,
       })),
     };
@@ -186,11 +203,9 @@ export class ZeitgeistService {
   }
 
   /**
-   * Generate advice from matched vibes
+   * Generate advice from matched vibes using local LLM
    */
   private async generateAdvice(scenario: Scenario, matches: any[]): Promise<Advice> {
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
     const prompt = `You are a cultural advisor helping someone navigate a social situation.
 
 SCENARIO:
@@ -202,7 +217,8 @@ RELEVANT CULTURAL VIBES:
 ${matches.map((m, i) => `${i + 1}. ${m.vibe.name} (${m.vibe.category})
    ${m.vibe.description}
    Keywords: ${m.vibe.keywords.join(', ')}
-   Relevance: ${m.reasoning}`).join('\n\n')}
+   Current Relevance: ${(m.vibe.currentRelevance * 100).toFixed(0)}%
+   ${m.reasoning}`).join('\n\n')}
 
 Based on these vibes, provide specific, actionable advice:
 
@@ -240,14 +256,15 @@ Return ONLY valid JSON in this format:
 
 Be specific and practical. Reference the vibes to justify your suggestions.`;
 
-    const message = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
-      max_tokens: 3000,
-      messages: [{ role: 'user', content: prompt }],
+    const llm = await getLLM();
+    const response = await llm.complete([
+      { role: 'user', content: prompt }
+    ], {
+      maxTokens: 3000,
+      temperature: 0.7,
     });
 
-    const responseText = message.content[0].type === 'text' ? message.content[0].text : '{}';
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    const jsonMatch = response.content.match(/\{[\s\S]*\}/);
     const adviceData = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
 
     return {

@@ -1,0 +1,167 @@
+/**
+ * Temporal Decay System
+ *
+ * Manages how vibes lose relevance over time
+ * Different vibe categories have different half-lives
+ */
+
+import { Vibe, VibeCategory } from './types';
+
+/**
+ * Default half-life (in days) for different vibe categories
+ * These are starting assumptions and can be tuned based on observation
+ */
+export const DEFAULT_HALF_LIVES: Record<VibeCategory, number> = {
+  'meme': 3,           // Memes die quickly (3 days)
+  'event': 7,          // Events relevant for a week
+  'trend': 14,         // Trends last ~2 weeks
+  'topic': 21,         // Topics remain relevant for ~3 weeks
+  'sentiment': 30,     // Sentiments change slowly (1 month)
+  'aesthetic': 60,     // Aesthetics evolve over months
+  'movement': 90,      // Movements last longer (3 months)
+  'custom': 14,        // Default for custom categories
+};
+
+/**
+ * Calculate relevance decay using exponential decay
+ *
+ * Formula: currentRelevance = initialStrength * (0.5 ^ (daysSinceLastSeen / halfLife))
+ *
+ * This means:
+ * - After 1 half-life: 50% relevance
+ * - After 2 half-lives: 25% relevance
+ * - After 3 half-lives: 12.5% relevance
+ */
+export function calculateDecay(vibe: Vibe, now: Date = new Date()): number {
+  const daysSinceLastSeen = (now.getTime() - vibe.lastSeen.getTime()) / (1000 * 60 * 60 * 24);
+
+  // If seen very recently (< 1 hour), no decay
+  if (daysSinceLastSeen < 1/24) {
+    return vibe.strength;
+  }
+
+  const halfLife = vibe.halfLife || DEFAULT_HALF_LIVES[vibe.category] || 14;
+
+  // Exponential decay formula
+  const decayFactor = Math.pow(0.5, daysSinceLastSeen / halfLife);
+
+  return vibe.strength * decayFactor;
+}
+
+/**
+ * Apply decay to all vibes in a list
+ */
+export function applyDecayToVibes(vibes: Vibe[], now: Date = new Date()): Vibe[] {
+  return vibes.map(vibe => ({
+    ...vibe,
+    currentRelevance: calculateDecay(vibe, now),
+  }));
+}
+
+/**
+ * Filter out vibes that have decayed below a threshold
+ */
+export function filterDecayedVibes(
+  vibes: Vibe[],
+  threshold = 0.05, // Remove vibes below 5% relevance
+  now: Date = new Date()
+): Vibe[] {
+  return vibes.filter(vibe => {
+    const relevance = calculateDecay(vibe, now);
+    return relevance >= threshold;
+  });
+}
+
+/**
+ * Boost a vibe when it's seen again
+ * This prevents good trends from dying if they keep appearing
+ */
+export function boostVibe(vibe: Vibe, boostAmount = 0.2): Vibe {
+  return {
+    ...vibe,
+    lastSeen: new Date(),
+    strength: Math.min(1.0, vibe.strength + boostAmount),
+    currentRelevance: Math.min(1.0, vibe.currentRelevance + boostAmount),
+  };
+}
+
+/**
+ * Merge a new occurrence of a vibe with an existing one
+ * This is called when we detect the same vibe again in new data
+ */
+export function mergeVibeOccurrence(existing: Vibe, newVibe: Vibe): Vibe {
+  const now = new Date();
+
+  // Calculate how much to boost based on time since last seen
+  const daysSinceLastSeen = (now.getTime() - existing.lastSeen.getTime()) / (1000 * 60 * 60 * 24);
+  const boostAmount = Math.min(0.3, 0.1 + (daysSinceLastSeen * 0.02)); // More boost if it's been a while
+
+  return {
+    ...existing,
+    lastSeen: now,
+    strength: Math.min(1.0, existing.strength + boostAmount),
+    currentRelevance: Math.min(1.0, calculateDecay(existing, now) + boostAmount),
+    keywords: Array.from(new Set([...existing.keywords, ...newVibe.keywords])),
+    sources: Array.from(new Set([...existing.sources, ...newVibe.sources])),
+    relatedVibes: Array.from(new Set([
+      ...(existing.relatedVibes || []),
+      ...(newVibe.relatedVibes || [])
+    ])),
+  };
+}
+
+/**
+ * Get vibes sorted by current relevance (considering decay)
+ */
+export function sortByRelevance(vibes: Vibe[], now: Date = new Date()): Vibe[] {
+  return vibes
+    .map(vibe => ({
+      ...vibe,
+      currentRelevance: calculateDecay(vibe, now),
+    }))
+    .sort((a, b) => b.currentRelevance - a.currentRelevance);
+}
+
+/**
+ * Get statistics about vibe ages and decay
+ */
+export function getTemporalStats(vibes: Vibe[], now: Date = new Date()) {
+  const ages = vibes.map(v => (now.getTime() - v.firstSeen.getTime()) / (1000 * 60 * 60 * 24));
+  const recencies = vibes.map(v => (now.getTime() - v.lastSeen.getTime()) / (1000 * 60 * 60 * 24));
+  const relevances = vibes.map(v => calculateDecay(v, now));
+
+  return {
+    totalVibes: vibes.length,
+    averageAge: ages.reduce((a, b) => a + b, 0) / ages.length,
+    averageDaysSinceLastSeen: recencies.reduce((a, b) => a + b, 0) / recencies.length,
+    averageRelevance: relevances.reduce((a, b) => a + b, 0) / relevances.length,
+    highlyRelevant: vibes.filter(v => calculateDecay(v, now) > 0.7).length,
+    moderatelyRelevant: vibes.filter(v => {
+      const rel = calculateDecay(v, now);
+      return rel > 0.3 && rel <= 0.7;
+    }).length,
+    lowRelevance: vibes.filter(v => {
+      const rel = calculateDecay(v, now);
+      return rel > 0.05 && rel <= 0.3;
+    }).length,
+    decayed: vibes.filter(v => calculateDecay(v, now) <= 0.05).length,
+  };
+}
+
+/**
+ * Configure custom half-life for a vibe based on heuristics
+ */
+export function suggestHalfLife(vibe: Vibe): number {
+  const baseHalfLife = DEFAULT_HALF_LIVES[vibe.category] || 14;
+
+  // Adjust based on strength - stronger vibes last longer
+  const strengthMultiplier = 0.7 + (vibe.strength * 0.6); // 0.7 to 1.3
+
+  // Adjust based on sentiment - controversial things die faster
+  const sentimentMultiplier = vibe.sentiment === 'mixed' ? 0.8 : 1.0;
+
+  // Adjust based on number of sources - more sources = more staying power
+  const sourceMultiplier = Math.min(1.5, 1.0 + (vibe.sources.length * 0.05));
+
+  return baseHalfLife * strengthMultiplier * sentimentMultiplier * sourceMultiplier;
+}

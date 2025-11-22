@@ -1,11 +1,12 @@
 /**
  * LLM Matcher
- * Uses Claude to reason about which vibes are relevant for a scenario
+ * Uses local LLM to reason about which vibes are relevant for a scenario
  */
 
-import Anthropic from '@anthropic-ai/sdk';
 import { BaseMatcher } from './base';
 import { Scenario, CulturalGraph, VibeMatch, Vibe } from '@/lib/types';
+import { getLLM } from '@/lib/llm';
+import { applyDecayToVibes, sortByRelevance } from '@/lib/temporal-decay';
 
 interface LLMMatch {
   vibeId: string;
@@ -15,46 +16,43 @@ interface LLMMatch {
 
 export class LLMMatcher extends BaseMatcher {
   readonly name = 'llm';
-  readonly description = 'Uses Claude to reason about scenario-vibe relevance';
-
-  private client: Anthropic;
-
-  constructor() {
-    super();
-    this.client = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY,
-    });
-  }
+  readonly description = 'Uses local LLM to reason about scenario-vibe relevance';
 
   async match(scenario: Scenario, graph: CulturalGraph): Promise<VibeMatch[]> {
     try {
+      // Apply decay to get current relevance scores
+      const vibes = Array.from(graph.vibes.values());
+      const vibesWithDecay = applyDecayToVibes(vibes);
+
+      // Filter to only highly relevant vibes to reduce prompt size
+      const relevantVibes = sortByRelevance(vibesWithDecay)
+        .filter(v => v.currentRelevance > 0.1)
+        .slice(0, 50); // Limit to top 50 to avoid token limits
+
       // Prepare vibes data for LLM
-      const vibesData = Array.from(graph.vibes.values()).map(v => ({
+      const vibesData = relevantVibes.map(v => ({
         id: v.id,
         name: v.name,
         description: v.description,
         category: v.category,
         keywords: v.keywords,
-        strength: v.strength,
+        currentRelevance: v.currentRelevance,
         sentiment: v.sentiment,
         domains: v.domains,
       }));
 
       const prompt = this.buildPrompt(scenario, vibesData);
 
-      const message = await this.client.messages.create({
-        model: 'claude-3-5-sonnet-20241022',
-        max_tokens: 2000,
-        messages: [{
-          role: 'user',
-          content: prompt,
-        }],
+      const llm = await getLLM();
+      const response = await llm.complete([
+        { role: 'user', content: prompt }
+      ], {
+        maxTokens: 2000,
+        temperature: 0.7,
       });
 
-      const responseText = message.content[0].type === 'text' ? message.content[0].text : '';
-
       // Extract JSON from response
-      const jsonMatch = responseText.match(/\[[\s\S]*\]/);
+      const jsonMatch = response.content.match(/\[[\s\S]*\]/);
       if (!jsonMatch) {
         console.warn('No valid JSON found in LLM response');
         return [];

@@ -3,6 +3,7 @@
  */
 
 import { Analyzer, RawContent, Vibe } from '@/lib/types';
+import { mergeVibeOccurrence, suggestHalfLife } from '@/lib/temporal-decay';
 
 /**
  * Abstract base class for analyzers
@@ -21,7 +22,7 @@ export abstract class BaseAnalyzer implements Analyzer {
   }
 
   /**
-   * Helper to merge existing and new vibes
+   * Helper to merge existing and new vibes with temporal decay
    * Override for custom merge logic
    */
   protected mergeVibes(existing: Vibe[], newVibes: Vibe[]): Vibe[] {
@@ -38,18 +39,8 @@ export abstract class BaseAnalyzer implements Analyzer {
       const existingVibe = vibeMap.get(key);
 
       if (existingVibe) {
-        // Merge: boost strength, combine keywords, update timestamp
-        vibeMap.set(key, {
-          ...existingVibe,
-          strength: Math.min(1, existingVibe.strength + newVibe.strength * 0.3),
-          keywords: Array.from(new Set([...existingVibe.keywords, ...newVibe.keywords])),
-          sources: Array.from(new Set([...existingVibe.sources, ...newVibe.sources])),
-          timestamp: new Date(),
-          relatedVibes: Array.from(new Set([
-            ...(existingVibe.relatedVibes || []),
-            ...(newVibe.relatedVibes || [])
-          ])),
-        });
+        // Use temporal decay merge function
+        vibeMap.set(key, mergeVibeOccurrence(existingVibe, newVibe));
       } else {
         vibeMap.set(key, newVibe);
       }
@@ -63,16 +54,27 @@ export abstract class BaseAnalyzer implements Analyzer {
   }
 
   protected createVibe(partial: Partial<Vibe> & { name: string; description: string }): Vibe {
-    return {
+    const now = new Date();
+    const vibe: Vibe = {
       id: this.generateVibeId(partial.name),
       category: 'trend',
       keywords: [],
       strength: 0.5,
       sentiment: 'neutral',
-      timestamp: new Date(),
+      timestamp: now,
       sources: [],
+      firstSeen: now,
+      lastSeen: now,
+      currentRelevance: 0.5,
       ...partial,
     } as Vibe;
+
+    // Set suggested half-life if not provided
+    if (!vibe.halfLife) {
+      vibe.halfLife = suggestHalfLife(vibe);
+    }
+
+    return vibe;
   }
 }
 

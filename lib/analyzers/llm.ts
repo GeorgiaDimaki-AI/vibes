@@ -1,11 +1,12 @@
 /**
  * LLM Analyzer
- * Uses Claude to extract vibes from raw content
+ * Uses local LLM (LM Studio or Ollama) to extract vibes from raw content
  */
 
-import Anthropic from '@anthropic-ai/sdk';
 import { BaseAnalyzer } from './base';
 import { RawContent, Vibe, VibeCategory, Sentiment } from '@/lib/types';
+import { getLLM } from '@/lib/llm';
+import { suggestHalfLife } from '@/lib/temporal-decay';
 
 interface ExtractedVibe {
   name: string;
@@ -21,16 +22,7 @@ interface ExtractedVibe {
 
 export class LLMAnalyzer extends BaseAnalyzer {
   readonly name = 'llm';
-  readonly description = 'Uses Claude to extract cultural vibes from content';
-
-  private client: Anthropic;
-
-  constructor() {
-    super();
-    this.client = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY,
-    });
-  }
+  readonly description = 'Uses local LLM to extract cultural vibes from content';
 
   async analyze(content: RawContent[]): Promise<Vibe[]> {
     if (content.length === 0) {
@@ -94,19 +86,16 @@ Return ONLY a valid JSON array of vibes. Example:
 
 Important: Be specific and insightful. Look for underlying patterns, not just surface-level topics. Identify 3-7 vibes.`;
 
-    const message = await this.client.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
-      max_tokens: 2000,
-      messages: [{
-        role: 'user',
-        content: prompt,
-      }],
+    const llm = await getLLM();
+    const response = await llm.complete([
+      { role: 'user', content: prompt }
+    ], {
+      maxTokens: 2000,
+      temperature: 0.7,
     });
 
-    const responseText = message.content[0].type === 'text' ? message.content[0].text : '';
-
     // Extract JSON from response
-    const jsonMatch = responseText.match(/\[[\s\S]*\]/);
+    const jsonMatch = response.content.match(/\[[\s\S]*\]/);
     if (!jsonMatch) {
       console.warn('No valid JSON found in LLM response');
       return [];
@@ -114,10 +103,21 @@ Important: Be specific and insightful. Look for underlying patterns, not just su
 
     const extractedVibes: ExtractedVibe[] = JSON.parse(jsonMatch[0]);
 
-    return extractedVibes.map(ev => this.createVibe({
-      ...ev,
-      sources: content.map(c => c.url || c.id).filter(Boolean),
-    }));
+    const now = new Date();
+    return extractedVibes.map(ev => {
+      const vibe = this.createVibe({
+        ...ev,
+        sources: content.map(c => c.url || c.id).filter(Boolean),
+        firstSeen: now,
+        lastSeen: now,
+        currentRelevance: ev.strength,
+      });
+
+      // Set suggested half-life based on vibe properties
+      vibe.halfLife = suggestHalfLife(vibe);
+
+      return vibe;
+    });
   }
 
   private batchContent(content: RawContent[], batchSize: number): RawContent[][] {

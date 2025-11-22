@@ -34,9 +34,25 @@ export class PostgresGraphStore implements GraphStore {
         demographics TEXT[],
         locations TEXT[],
         domains TEXT[],
-        metadata JSONB
+        metadata JSONB,
+        first_seen TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        last_seen TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        decay_rate REAL,
+        current_relevance REAL NOT NULL DEFAULT 0.5,
+        half_life REAL
       )
     `;
+
+    // Add columns if they don't exist (migration for existing databases)
+    try {
+      await sql`ALTER TABLE vibes ADD COLUMN IF NOT EXISTS first_seen TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP`;
+      await sql`ALTER TABLE vibes ADD COLUMN IF NOT EXISTS last_seen TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP`;
+      await sql`ALTER TABLE vibes ADD COLUMN IF NOT EXISTS decay_rate REAL`;
+      await sql`ALTER TABLE vibes ADD COLUMN IF NOT EXISTS current_relevance REAL NOT NULL DEFAULT 0.5`;
+      await sql`ALTER TABLE vibes ADD COLUMN IF NOT EXISTS half_life REAL`;
+    } catch (error) {
+      console.log('Migration might have already run or columns exist');
+    }
 
     // Create index on embeddings for similarity search
     await sql`
@@ -62,7 +78,8 @@ export class PostgresGraphStore implements GraphStore {
       INSERT INTO vibes (
         id, name, description, category, keywords, embedding,
         strength, sentiment, timestamp, sources, related_vibes,
-        influences, demographics, locations, domains, metadata
+        influences, demographics, locations, domains, metadata,
+        first_seen, last_seen, decay_rate, current_relevance, half_life
       ) VALUES (
         ${vibe.id},
         ${vibe.name},
@@ -79,7 +96,12 @@ export class PostgresGraphStore implements GraphStore {
         ${vibe.demographics || []},
         ${vibe.locations || []},
         ${vibe.domains || []},
-        ${JSON.stringify(vibe.metadata || {})}
+        ${JSON.stringify(vibe.metadata || {})},
+        ${vibe.firstSeen.toISOString()},
+        ${vibe.lastSeen.toISOString()},
+        ${vibe.decayRate || null},
+        ${vibe.currentRelevance},
+        ${vibe.halfLife || null}
       )
       ON CONFLICT (id) DO UPDATE SET
         name = EXCLUDED.name,
@@ -96,7 +118,11 @@ export class PostgresGraphStore implements GraphStore {
         demographics = EXCLUDED.demographics,
         locations = EXCLUDED.locations,
         domains = EXCLUDED.domains,
-        metadata = EXCLUDED.metadata
+        metadata = EXCLUDED.metadata,
+        last_seen = EXCLUDED.last_seen,
+        decay_rate = EXCLUDED.decay_rate,
+        current_relevance = EXCLUDED.current_relevance,
+        half_life = EXCLUDED.half_life
     `;
   }
 
@@ -214,6 +240,11 @@ export class PostgresGraphStore implements GraphStore {
       locations: row.locations || [],
       domains: row.domains || [],
       metadata: row.metadata || {},
+      firstSeen: new Date(row.first_seen || row.timestamp),
+      lastSeen: new Date(row.last_seen || row.timestamp),
+      decayRate: row.decay_rate,
+      currentRelevance: row.current_relevance || 0.5,
+      halfLife: row.half_life,
     };
   }
 }

@@ -27,6 +27,13 @@ export interface Vibe {
   timestamp: Date;
   sources: string[]; // URLs or identifiers of source content
 
+  // Temporal decay fields
+  firstSeen: Date; // When this vibe was first detected
+  lastSeen: Date; // When this vibe was last observed
+  decayRate?: number; // Custom decay rate (0-1), higher = faster decay
+  currentRelevance: number; // 0-1, time-adjusted relevance score
+  halfLife?: number; // Days until relevance drops to 50% (default varies by category)
+
   // Relationships
   relatedVibes?: string[]; // IDs of related vibes
   influences?: string[]; // IDs of vibes this one influences

@@ -5,6 +5,12 @@
 // Types
 export * from './types';
 
+// LLM providers
+export * from './llm';
+
+// Temporal decay
+export * from './temporal-decay';
+
 // Collectors
 export {
   BaseCollector,
