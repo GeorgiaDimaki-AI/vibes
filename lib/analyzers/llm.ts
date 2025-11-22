@@ -7,6 +7,7 @@ import { BaseAnalyzer } from './base';
 import { RawContent, Vibe, VibeCategory, Sentiment } from '@/lib/types';
 import { getLLM } from '@/lib/llm';
 import { suggestHalfLife } from '@/lib/temporal-decay';
+import { suggestRegionFromContent, calculateRegionalRelevance } from '@/lib/regional-utils';
 
 interface ExtractedVibe {
   name: string;
@@ -105,12 +106,25 @@ Important: Be specific and insightful. Look for underlying patterns, not just su
 
     const now = new Date();
     return extractedVibes.map(ev => {
+      // Detect region from content
+      const contentForRegion = content.map(c => ({
+        url: c.url,
+        text: `${c.title || ''} ${c.body || ''}`,
+      }));
+      const { primary, detected } = suggestRegionFromContent(contentForRegion);
+
       const vibe = this.createVibe({
         ...ev,
         sources: content.map(c => c.url || c.id).filter(Boolean),
         firstSeen: now,
         lastSeen: now,
         currentRelevance: ev.strength,
+        // Add geography metadata
+        geography: {
+          primary,
+          relevance: calculateRegionalRelevance(primary, detected),
+          detectedFrom: content.map(c => c.url).filter(Boolean) as string[],
+        },
       });
 
       // Set suggested half-life based on vibe properties
