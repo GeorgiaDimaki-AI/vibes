@@ -12,7 +12,7 @@ export abstract class BaseMatcher implements Matcher {
   abstract readonly name: string;
   abstract readonly description: string;
 
-  abstract match(scenario: Scenario, graph: CulturalGraph): Promise<VibeMatch[]>;
+  abstract match(scenario: Scenario, graph: CulturalGraph, userProfile?: any): Promise<VibeMatch[]>;
 
   /**
    * Helper to sort matches by relevance score
@@ -71,20 +71,20 @@ export class MatcherRegistry {
     return Array.from(this.matchers.values());
   }
 
-  async matchWithDefault(scenario: Scenario, graph: CulturalGraph): Promise<VibeMatch[]> {
+  async matchWithDefault(scenario: Scenario, graph: CulturalGraph, userProfile?: any): Promise<VibeMatch[]> {
     const matcher = this.getDefault();
     if (!matcher) {
       throw new Error('No matcher available');
     }
-    return matcher.match(scenario, graph);
+    return matcher.match(scenario, graph, userProfile);
   }
 
-  async matchWith(name: string, scenario: Scenario, graph: CulturalGraph): Promise<VibeMatch[]> {
+  async matchWith(name: string, scenario: Scenario, graph: CulturalGraph, userProfile?: any): Promise<VibeMatch[]> {
     const matcher = this.matchers.get(name);
     if (!matcher) {
       throw new Error(`Matcher ${name} not found`);
     }
-    return matcher.match(scenario, graph);
+    return matcher.match(scenario, graph, userProfile);
   }
 
   /**

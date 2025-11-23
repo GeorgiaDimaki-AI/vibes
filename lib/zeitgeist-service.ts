@@ -36,7 +36,7 @@ import { CollectorRegistry } from './collectors/base';
 import { AnalyzerRegistry } from './analyzers/base';
 import { MatcherRegistry } from './matchers/base';
 import { GraphStore } from './graph/store';
-import { Scenario, Advice, Vibe, CollectorOptions } from './types';
+import { Scenario, Advice, Vibe, CollectorOptions, UserProfile } from './types';
 import { getLLM } from './llm';
 import { getEmbeddingProvider } from './embeddings';
 import {
@@ -45,6 +45,7 @@ import {
   getTemporalStats,
   sortByRelevance,
 } from './temporal-decay';
+import { getConversationStyleInstruction } from './users/personalization-utils';
 
 /**
  * Configuration for creating a ZeitgeistService instance
@@ -189,13 +190,16 @@ export class ZeitgeistService {
    * Process:
    * 1. Loads the current cultural graph from storage
    * 2. Matches scenario to relevant vibes using semantic similarity + LLM reasoning
-   * 3. Generates structured advice using LLM with matched vibes as context
-   * 4. Returns actionable recommendations with confidence score
+   * 3. If userProfile provided, uses PersonalizedMatcher for filtering/boosting
+   * 4. Generates structured advice using LLM with matched vibes as context
+   * 5. Applies conversation style based on user preferences
+   * 6. Returns actionable recommendations with confidence score
    *
    * Why two-stage LLM: First stage (matching) focuses on relevance, second stage
    * (advice) focuses on creativity. This separation improves both quality and speed.
    *
    * @param scenario - User's social situation with optional context and preferences
+   * @param userProfile - Optional user profile for personalized matching
    * @returns Structured advice including topics, behavior, and style recommendations
    *
    * @example
@@ -210,26 +214,40 @@ export class ZeitgeistService {
    *     topics: ["technology", "startups"],
    *     avoid: ["politics"]
    *   }
-   * });
+   * }, userProfile);
    *
    * console.log(advice.recommendations.topics);
    * // [{ topic: "AI Development", talking_points: [...], priority: "high" }]
    * ```
    */
-  async getAdvice(scenario: Scenario): Promise<Advice> {
+  async getAdvice(scenario: Scenario, userProfile?: UserProfile): Promise<Advice> {
     await this.initialize();
 
     // Get the cultural graph
     const graph = await this.store.getGraph();
 
-    // Match scenario to relevant vibes
-    console.log('Matching scenario to vibes...');
-    const matches = await this.matchers.matchWithDefault(scenario, graph);
+    // Choose matcher based on whether user profile is provided
+    let matches;
+    if (userProfile) {
+      console.log('Using personalized matching...');
+      const personalizedMatcher = this.matchers.get('personalized');
+      if (personalizedMatcher) {
+        matches = await personalizedMatcher.match(scenario, graph, userProfile);
+      } else {
+        // Fallback to default matcher if personalized matcher not available
+        console.warn('PersonalizedMatcher not available, falling back to default');
+        matches = await this.matchers.matchWithDefault(scenario, graph);
+      }
+    } else {
+      console.log('Matching scenario to vibes...');
+      matches = await this.matchers.matchWithDefault(scenario, graph);
+    }
+
     console.log(`Found ${matches.length} relevant vibes`);
 
     // Generate advice using LLM
     console.log('Generating advice...');
-    const advice = await this.generateAdvice(scenario, matches);
+    const advice = await this.generateAdvice(scenario, matches, userProfile);
 
     return advice;
   }
@@ -391,6 +409,8 @@ export class ZeitgeistService {
    * the LLM to generate specific, actionable recommendations for topics, behavior,
    * and style. The response is parsed as JSON and returned as structured advice.
    *
+   * If userProfile is provided, adjusts conversation style and considers regional context.
+   *
    * Why JSON output: Forces the LLM to structure its response consistently,
    * making it easier to display in the UI and ensuring all required fields are present.
    *
@@ -402,11 +422,30 @@ export class ZeitgeistService {
    *
    * @param scenario - User's social situation
    * @param matches - Vibes matched to the scenario with relevance scores
+   * @param userProfile - Optional user profile for style customization
    * @returns Structured advice with recommendations and confidence score
    * @private
    */
-  private async generateAdvice(scenario: Scenario, matches: any[]): Promise<Advice> {
+  private async generateAdvice(scenario: Scenario, matches: any[], userProfile?: UserProfile): Promise<Advice> {
+    // Build conversation style instruction if profile provided
+    let styleInstruction = '';
+    let regionalContext = '';
+    let avoidanceNote = '';
+
+    if (userProfile) {
+      styleInstruction = `\nCONVERSATION STYLE: ${getConversationStyleInstruction(userProfile.conversationStyle)}`;
+
+      if (userProfile.region) {
+        regionalContext = `\nUSER REGION: ${userProfile.region}. Consider local context when relevant.`;
+      }
+
+      if (userProfile.avoidTopics && userProfile.avoidTopics.length > 0) {
+        avoidanceNote = `\nIMPORTANT: Avoid mentioning or recommending these topics: ${userProfile.avoidTopics.join(', ')}`;
+      }
+    }
+
     const prompt = `You are a cultural advisor helping someone navigate a social situation.
+${styleInstruction}${regionalContext}${avoidanceNote}
 
 SCENARIO:
 ${scenario.description}

@@ -11,7 +11,7 @@ export class SemanticMatcher extends BaseMatcher {
   readonly name = 'semantic';
   readonly description = 'Matches scenarios to vibes using semantic similarity';
 
-  async match(scenario: Scenario, graph: CulturalGraph): Promise<VibeMatch[]> {
+  async match(scenario: Scenario, graph: CulturalGraph, userProfile?: any): Promise<VibeMatch[]> {
     try {
       // Generate embedding for scenario
       const scenarioText = this.scenarioToText(scenario);

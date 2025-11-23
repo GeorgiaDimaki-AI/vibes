@@ -38,6 +38,7 @@ export {
   matcherRegistry,
   SemanticMatcher,
   LLMMatcher,
+  PersonalizedMatcher,
   initializeMatchers,
 } from './matchers';
 

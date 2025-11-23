@@ -19,7 +19,7 @@ export class LLMMatcher extends BaseMatcher {
   readonly name = 'llm';
   readonly description = 'Uses local LLM to reason about scenario-vibe relevance';
 
-  async match(scenario: Scenario, graph: CulturalGraph): Promise<VibeMatch[]> {
+  async match(scenario: Scenario, graph: CulturalGraph, userProfile?: any): Promise<VibeMatch[]> {
     try {
       // Apply decay to get current relevance scores
       const vibes = Array.from(graph.vibes.values());
