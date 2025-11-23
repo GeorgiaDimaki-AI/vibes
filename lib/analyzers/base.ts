@@ -66,7 +66,9 @@ export abstract class BaseAnalyzer implements Analyzer {
   }
 
   protected generateVibeId(name: string): string {
-    return `vibe-${name.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`;
+    // Use timestamp + random suffix to prevent collisions
+    const random = Math.random().toString(36).substring(2, 8);
+    return `vibe-${name.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}-${random}`;
   }
 
   protected createVibe(partial: Partial<Vibe> & { name: string; description: string }): Vibe {

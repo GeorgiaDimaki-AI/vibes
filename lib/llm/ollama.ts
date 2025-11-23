@@ -4,6 +4,7 @@
  */
 
 import { LLMProvider, LLMMessage, LLMResponse } from './types';
+import { fetchWithTimeout, retryWithBackoff, isRetryableError } from '@/lib/utils/network';
 
 interface OllamaMessage {
   role: string;
@@ -44,8 +45,8 @@ export class OllamaProvider implements LLMProvider {
       model?: string;
     }
   ): Promise<LLMResponse> {
-    try {
-      const response = await fetch(`${this.baseUrl}/api/chat`, {
+    return retryWithBackoff(async () => {
+      const response = await fetchWithTimeout(`${this.baseUrl}/api/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -62,13 +63,20 @@ export class OllamaProvider implements LLMProvider {
             num_predict: options?.maxTokens || 2000,
           },
         }),
+        timeout: 60000, // 60s timeout for LLM completion
       });
 
       if (!response.ok) {
-        throw new Error(`Ollama API error: ${response.statusText}`);
+        const error = new Error(`Ollama API error: ${response.status} ${response.statusText}`);
+        (error as any).response = { status: response.status };
+        throw error;
       }
 
       const data: OllamaResponse = await response.json();
+
+      if (!data.message?.content) {
+        throw new Error('Invalid response from Ollama: missing message content');
+      }
 
       return {
         content: data.message.content,
@@ -78,15 +86,18 @@ export class OllamaProvider implements LLMProvider {
           totalTokens: (data.prompt_eval_count || 0) + (data.eval_count || 0),
         },
       };
-    } catch (error) {
-      console.error('Ollama completion failed:', error);
-      throw error;
-    }
+    }, {
+      maxRetries: 3,
+      baseDelay: 1000,
+      shouldRetry: isRetryableError,
+    });
   }
 
   async isAvailable(): Promise<boolean> {
     try {
-      const response = await fetch(`${this.baseUrl}/api/tags`);
+      const response = await fetchWithTimeout(`${this.baseUrl}/api/tags`, {
+        timeout: 5000, // 5s timeout for availability check
+      });
       return response.ok;
     } catch (error) {
       console.warn('Ollama not available:', error);
@@ -96,7 +107,9 @@ export class OllamaProvider implements LLMProvider {
 
   async listModels(): Promise<string[]> {
     try {
-      const response = await fetch(`${this.baseUrl}/api/tags`);
+      const response = await fetchWithTimeout(`${this.baseUrl}/api/tags`, {
+        timeout: 5000,
+      });
       if (!response.ok) return [];
 
       const data = await response.json();

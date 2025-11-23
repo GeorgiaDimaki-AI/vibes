@@ -39,7 +39,8 @@ export class PostgresGraphStore implements GraphStore {
         last_seen TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
         decay_rate REAL,
         current_relevance REAL NOT NULL DEFAULT 0.5,
-        half_life REAL
+        half_life REAL,
+        geography JSONB
       )
     `;
 
@@ -50,18 +51,37 @@ export class PostgresGraphStore implements GraphStore {
       await sql`ALTER TABLE vibes ADD COLUMN IF NOT EXISTS decay_rate REAL`;
       await sql`ALTER TABLE vibes ADD COLUMN IF NOT EXISTS current_relevance REAL NOT NULL DEFAULT 0.5`;
       await sql`ALTER TABLE vibes ADD COLUMN IF NOT EXISTS half_life REAL`;
+      await sql`ALTER TABLE vibes ADD COLUMN IF NOT EXISTS geography JSONB`;
     } catch (error) {
       console.log('Migration might have already run or columns exist');
     }
 
-    // Create index on embeddings for similarity search
+    // Create indexes for performance
     await sql`
       CREATE INDEX IF NOT EXISTS vibes_embedding_idx
       ON vibes USING ivfflat (embedding vector_cosine_ops)
       WITH (lists = 100)
     `;
 
-    // Edges table
+    // Index on keywords for findVibesByKeywords() - GIN index for array operations
+    await sql`
+      CREATE INDEX IF NOT EXISTS vibes_keywords_gin_idx
+      ON vibes USING GIN (keywords)
+    `;
+
+    // Index on timestamp for getAllVibes() and findRecentVibes()
+    await sql`
+      CREATE INDEX IF NOT EXISTS vibes_timestamp_idx
+      ON vibes (timestamp DESC)
+    `;
+
+    // Index on category for filtering
+    await sql`
+      CREATE INDEX IF NOT EXISTS vibes_category_idx
+      ON vibes (category)
+    `;
+
+    // Edges table with foreign key constraints for referential integrity
     await sql`
       CREATE TABLE IF NOT EXISTS edges (
         from_vibe TEXT NOT NULL,
@@ -71,6 +91,35 @@ export class PostgresGraphStore implements GraphStore {
         PRIMARY KEY (from_vibe, to_vibe, type)
       )
     `;
+
+    // Add foreign key constraints if they don't exist
+    // This ensures referential integrity - no orphaned edges
+    try {
+      await sql`
+        ALTER TABLE edges
+        ADD CONSTRAINT IF NOT EXISTS edges_from_vibe_fkey
+        FOREIGN KEY (from_vibe) REFERENCES vibes(id) ON DELETE CASCADE
+      `;
+      await sql`
+        ALTER TABLE edges
+        ADD CONSTRAINT IF NOT EXISTS edges_to_vibe_fkey
+        FOREIGN KEY (to_vibe) REFERENCES vibes(id) ON DELETE CASCADE
+      `;
+    } catch (error) {
+      // Constraints might already exist
+      console.log('Foreign key constraints might already exist');
+    }
+
+    // Indexes on edges for getEdges() performance
+    await sql`
+      CREATE INDEX IF NOT EXISTS edges_from_vibe_idx
+      ON edges (from_vibe)
+    `;
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS edges_to_vibe_idx
+      ON edges (to_vibe)
+    `;
   }
 
   async saveVibe(vibe: Vibe): Promise<void> {
@@ -79,7 +128,8 @@ export class PostgresGraphStore implements GraphStore {
         id, name, description, category, keywords, embedding,
         strength, sentiment, timestamp, sources, related_vibes,
         influences, demographics, locations, domains, metadata,
-        first_seen, last_seen, decay_rate, current_relevance, half_life
+        first_seen, last_seen, decay_rate, current_relevance, half_life,
+        geography
       ) VALUES (
         ${vibe.id},
         ${vibe.name},
@@ -101,7 +151,8 @@ export class PostgresGraphStore implements GraphStore {
         ${vibe.lastSeen.toISOString()},
         ${vibe.decayRate || null},
         ${vibe.currentRelevance},
-        ${vibe.halfLife || null}
+        ${vibe.halfLife || null},
+        ${vibe.geography ? JSON.stringify(vibe.geography) : null}
       )
       ON CONFLICT (id) DO UPDATE SET
         name = EXCLUDED.name,
@@ -122,14 +173,84 @@ export class PostgresGraphStore implements GraphStore {
         last_seen = EXCLUDED.last_seen,
         decay_rate = EXCLUDED.decay_rate,
         current_relevance = EXCLUDED.current_relevance,
-        half_life = EXCLUDED.half_life
+        half_life = EXCLUDED.half_life,
+        geography = EXCLUDED.geography
     `;
   }
 
   async saveVibes(vibes: Vibe[]): Promise<void> {
-    for (const vibe of vibes) {
-      await this.saveVibe(vibe);
-    }
+    if (vibes.length === 0) return;
+
+    // Use batch insert for better performance (10-40x faster than N+1)
+    const values: string[] = [];
+    const params: any[] = [];
+
+    vibes.forEach((vibe, index) => {
+      const offset = index * 24; // 24 fields per vibe
+      values.push(`(
+        $${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5},
+        $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10},
+        $${offset + 11}, $${offset + 12}, $${offset + 13}, $${offset + 14}, $${offset + 15},
+        $${offset + 16}, $${offset + 17}, $${offset + 18}, $${offset + 19}, $${offset + 20},
+        $${offset + 21}, $${offset + 22}, $${offset + 23}, $${offset + 24}
+      )`);
+
+      params.push(
+        vibe.id,
+        vibe.name,
+        vibe.description,
+        vibe.category,
+        vibe.keywords,
+        vibe.embedding ? `[${vibe.embedding.join(',')}]` : null,
+        vibe.strength,
+        vibe.sentiment,
+        vibe.timestamp.toISOString(),
+        vibe.sources,
+        vibe.relatedVibes || [],
+        vibe.influences || [],
+        vibe.demographics || [],
+        vibe.locations || [],
+        vibe.domains || [],
+        JSON.stringify(vibe.metadata || {}),
+        vibe.firstSeen.toISOString(),
+        vibe.lastSeen.toISOString(),
+        vibe.decayRate || null,
+        vibe.currentRelevance,
+        vibe.halfLife || null,
+        vibe.geography ? JSON.stringify(vibe.geography) : null
+      );
+    });
+
+    await sql.query(`
+      INSERT INTO vibes (
+        id, name, description, category, keywords, embedding,
+        strength, sentiment, timestamp, sources, related_vibes,
+        influences, demographics, locations, domains, metadata,
+        first_seen, last_seen, decay_rate, current_relevance, half_life,
+        geography
+      ) VALUES ${values.join(', ')}
+      ON CONFLICT (id) DO UPDATE SET
+        name = EXCLUDED.name,
+        description = EXCLUDED.description,
+        category = EXCLUDED.category,
+        keywords = EXCLUDED.keywords,
+        embedding = EXCLUDED.embedding,
+        strength = EXCLUDED.strength,
+        sentiment = EXCLUDED.sentiment,
+        timestamp = EXCLUDED.timestamp,
+        sources = EXCLUDED.sources,
+        related_vibes = EXCLUDED.related_vibes,
+        influences = EXCLUDED.influences,
+        demographics = EXCLUDED.demographics,
+        locations = EXCLUDED.locations,
+        domains = EXCLUDED.domains,
+        metadata = EXCLUDED.metadata,
+        last_seen = EXCLUDED.last_seen,
+        decay_rate = EXCLUDED.decay_rate,
+        current_relevance = EXCLUDED.current_relevance,
+        half_life = EXCLUDED.half_life,
+        geography = EXCLUDED.geography
+    `, params);
   }
 
   async getVibe(id: string): Promise<Vibe | null> {
@@ -245,6 +366,7 @@ export class PostgresGraphStore implements GraphStore {
       decayRate: row.decay_rate,
       currentRelevance: row.current_relevance || 0.5,
       halfLife: row.half_life,
+      geography: row.geography || undefined,
     };
   }
 }

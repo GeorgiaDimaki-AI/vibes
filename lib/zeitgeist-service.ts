@@ -1,17 +1,14 @@
 /**
  * Zeitgeist Service
  * Main orchestration layer that ties everything together
+ *
+ * Updated: Now uses dependency injection for better testability and flexibility
  */
 
-import {
-  collectorRegistry,
-  analyzerRegistry,
-  matcherRegistry,
-  initializeCollectors,
-  initializeAnalyzers,
-  initializeMatchers,
-} from './index';
-import { getGraphStore } from './graph';
+import { CollectorRegistry } from './collectors/base';
+import { AnalyzerRegistry } from './analyzers/base';
+import { MatcherRegistry } from './matchers/base';
+import { GraphStore } from './graph/store';
 import { Scenario, Advice, Vibe, CollectorOptions } from './types';
 import { getLLM } from './llm';
 import { getEmbeddingProvider } from './embeddings';
@@ -22,17 +19,60 @@ import {
   sortByRelevance,
 } from './temporal-decay';
 
+/**
+ * Configuration for creating a ZeitgeistService instance
+ */
+export interface ZeitgeistServiceConfig {
+  store?: GraphStore;
+  collectors?: CollectorRegistry;
+  analyzers?: AnalyzerRegistry;
+  matchers?: MatcherRegistry;
+}
+
 export class ZeitgeistService {
   private initialized = false;
-  private store = getGraphStore();
+  private store: GraphStore;
+  private collectors: CollectorRegistry;
+  private analyzers: AnalyzerRegistry;
+  private matchers: MatcherRegistry;
+
+  /**
+   * Create a new ZeitgeistService with dependency injection
+   * @param config Optional configuration with injected dependencies
+   */
+  constructor(config?: ZeitgeistServiceConfig) {
+    // Use provided dependencies or fall back to defaults
+    this.store = config?.store || this.getDefaultStore();
+    this.collectors = config?.collectors || this.getDefaultCollectors();
+    this.analyzers = config?.analyzers || this.getDefaultAnalyzers();
+    this.matchers = config?.matchers || this.getDefaultMatchers();
+  }
+
+  private getDefaultStore(): GraphStore {
+    const { getGraphStore } = require('./graph');
+    return getGraphStore();
+  }
+
+  private getDefaultCollectors(): CollectorRegistry {
+    const { collectorRegistry, initializeCollectors } = require('./collectors');
+    initializeCollectors();
+    return collectorRegistry;
+  }
+
+  private getDefaultAnalyzers(): AnalyzerRegistry {
+    const { analyzerRegistry, initializeAnalyzers } = require('./analyzers');
+    initializeAnalyzers();
+    return analyzerRegistry;
+  }
+
+  private getDefaultMatchers(): MatcherRegistry {
+    const { matcherRegistry, initializeMatchers } = require('./matchers');
+    initializeMatchers();
+    return matcherRegistry;
+  }
 
   async initialize() {
     if (this.initialized) return;
-
-    // Initialize all registries
-    initializeCollectors();
-    initializeAnalyzers();
-    initializeMatchers();
 
     // Initialize database if using Postgres
     if ('initialize' in this.store) {
@@ -50,7 +90,7 @@ export class ZeitgeistService {
 
     // Collect raw content
     console.log('Collecting content...');
-    const rawContent = await collectorRegistry.collectAll(options);
+    const rawContent = await this.collectors.collectAll(options);
     console.log(`Collected ${rawContent.length} pieces of content`);
 
     if (rawContent.length === 0) {
@@ -59,7 +99,7 @@ export class ZeitgeistService {
 
     // Analyze content to extract vibes
     console.log('Analyzing content...');
-    const newVibes = await analyzerRegistry.analyzeWithPrimary(rawContent);
+    const newVibes = await this.analyzers.analyzeWithPrimary(rawContent);
     console.log(`Extracted ${newVibes.length} vibes`);
 
     // Generate embeddings for vibes that don't have them
@@ -67,7 +107,7 @@ export class ZeitgeistService {
 
     // Get existing vibes and merge
     const existingVibes = await this.store.getAllVibes();
-    const analyzer = analyzerRegistry.getPrimary();
+    const analyzer = this.analyzers.getPrimary();
     const mergedVibes = analyzer
       ? await analyzer.update(existingVibes, rawContent)
       : vibesWithEmbeddings;
@@ -95,7 +135,7 @@ export class ZeitgeistService {
 
     // Match scenario to relevant vibes
     console.log('Matching scenario to vibes...');
-    const matches = await matcherRegistry.matchWithDefault(scenario, graph);
+    const matches = await this.matchers.matchWithDefault(scenario, graph);
     console.log(`Found ${matches.length} relevant vibes`);
 
     // Generate advice using LLM
@@ -259,8 +299,18 @@ Be specific and practical. Reference the vibes to justify your suggestions.`;
       temperature: 0.7,
     });
 
-    const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-    const adviceData = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
+    let adviceData: any = {};
+    try {
+      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        adviceData = JSON.parse(jsonMatch[0]);
+      } else {
+        console.warn('No JSON found in LLM response for advice generation');
+      }
+    } catch (error) {
+      console.error('Failed to parse advice JSON:', error);
+      console.error('Response content:', response.content);
+    }
 
     return {
       scenario,
@@ -270,12 +320,32 @@ Be specific and practical. Reference the vibes to justify your suggestions.`;
         behavior: adviceData.behavior || [],
         style: adviceData.style || [],
       },
-      reasoning: adviceData.reasoning || '',
+      reasoning: adviceData.reasoning || 'Unable to generate reasoning',
       confidence: adviceData.confidence || 0.5,
       timestamp: new Date(),
     };
   }
 }
 
-// Global service instance
+/**
+ * Factory function to create a configured ZeitgeistService instance
+ * @param config Optional configuration with custom dependencies
+ * @returns A new ZeitgeistService instance
+ */
+export function createZeitgeistService(config?: ZeitgeistServiceConfig): ZeitgeistService {
+  return new ZeitgeistService(config);
+}
+
+/**
+ * Default global service instance for convenience
+ * Uses default configurations and auto-initialized registries
+ *
+ * For testing or custom configurations, use createZeitgeistService() instead:
+ * ```typescript
+ * const service = createZeitgeistService({
+ *   store: mockStore,
+ *   collectors: testCollectors
+ * });
+ * ```
+ */
 export const zeitgeist = new ZeitgeistService();

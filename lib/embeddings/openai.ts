@@ -65,21 +65,7 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
   }
 
   async isAvailable(): Promise<boolean> {
-    try {
-      if (!process.env.OPENAI_API_KEY) {
-        return false;
-      }
-
-      // Quick test to verify the API key works
-      await this.client.embeddings.create({
-        model: this.model,
-        input: 'test',
-      });
-
-      return true;
-    } catch (error) {
-      console.error('OpenAI availability check failed:', error);
-      return false;
-    }
+    // Simple check - don't make actual API calls as it costs money
+    return !!process.env.OPENAI_API_KEY;
   }
 }

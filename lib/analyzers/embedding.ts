@@ -21,7 +21,8 @@ export class EmbeddingAnalyzer extends BaseAnalyzer {
       const embeddings = await this.generateEmbeddings(content);
 
       // Cluster similar content
-      const clusters = this.clusterBySimilarity(embeddings, 0.7); // similarity threshold
+      // Reduced threshold from 0.7 to 0.6 to avoid over-restrictive clustering
+      const clusters = this.clusterBySimilarity(embeddings, 0.6);
 
       // Generate vibes from clusters
       const vibes: Vibe[] = [];
@@ -53,6 +54,12 @@ export class EmbeddingAnalyzer extends BaseAnalyzer {
   }
 
   private cosineSimilarity(a: number[], b: number[]): number {
+    // Validate dimensional compatibility
+    if (!a || !b || a.length !== b.length) {
+      console.warn(`[EmbeddingAnalyzer] Dimension mismatch: ${a?.length} vs ${b?.length}`);
+      return 0;
+    }
+
     let dotProduct = 0;
     let normA = 0;
     let normB = 0;
@@ -63,7 +70,10 @@ export class EmbeddingAnalyzer extends BaseAnalyzer {
       normB += b[i] * b[i];
     }
 
-    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+    const denominator = Math.sqrt(normA) * Math.sqrt(normB);
+    if (denominator === 0) return 0;
+
+    return dotProduct / denominator;
   }
 
   private clusterBySimilarity(
@@ -73,14 +83,21 @@ export class EmbeddingAnalyzer extends BaseAnalyzer {
     const clusters: number[][] = [];
     const assigned = new Set<number>();
 
-    for (const { idx, embedding } of embeddings) {
+    // Sort for determinism to reduce order-dependence
+    const sorted = [...embeddings].sort((a, b) => {
+      const meanA = a.embedding.reduce((s, v) => s + v, 0) / a.embedding.length;
+      const meanB = b.embedding.reduce((s, v) => s + v, 0) / b.embedding.length;
+      return meanB - meanA;
+    });
+
+    for (const { idx, embedding } of sorted) {
       if (assigned.has(idx)) continue;
 
       const cluster = [idx];
       assigned.add(idx);
 
       // Find similar items
-      for (const other of embeddings) {
+      for (const other of sorted) {
         if (assigned.has(other.idx)) continue;
 
         const similarity = this.cosineSimilarity(embedding, other.embedding);
@@ -90,9 +107,9 @@ export class EmbeddingAnalyzer extends BaseAnalyzer {
         }
       }
 
-      if (cluster.length >= 2) {
-        clusters.push(cluster);
-      }
+      // FIX: Include ALL clusters, even singletons
+      // This prevents data loss of unique/emerging trends
+      clusters.push(cluster);
     }
 
     return clusters;

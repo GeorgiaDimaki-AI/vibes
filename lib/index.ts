@@ -52,4 +52,9 @@ export {
 } from './graph';
 
 // Main service
-export { ZeitgeistService, zeitgeist } from './zeitgeist-service';
+export {
+  ZeitgeistService,
+  ZeitgeistServiceConfig,
+  createZeitgeistService,
+  zeitgeist,
+} from './zeitgeist-service';
