@@ -353,8 +353,8 @@ MIT
 Comprehensive guides for developers:
 
 - **[Developer Guide](docs/DEVELOPER_GUIDE.md)** - Get started contributing in < 30 minutes
-- **[Testing Guide](claude_docs/*_testing-guide_*.md)** - Complete manual testing procedures
-- **[Code Navigation Guide](claude_docs/*_navigation-guide_*.md)** - Navigate and extend the codebase
+- **[Testing Guide](claude_docs/20251123_024718_012cdxacEy7xvfNV6gBNJTcP_testing-guide_agent11.md)** - Complete manual testing procedures
+- **[Code Navigation Guide](claude_docs/20251123_024718_012cdxacEy7xvfNV6gBNJTcP_navigation-guide_agent11.md)** - Navigate and extend the codebase
 - **[API Documentation](docs/API_DOCUMENTATION.md)** - Complete API reference
 - **[Architecture](docs/ARCHITECTURE.md)** - Technical deep dive
 - **[Deployment](docs/DEPLOYMENT.md)** - Deploy to production
