@@ -1,8 +1,28 @@
 /**
  * Temporal Decay System
  *
- * Manages how vibes lose relevance over time
- * Different vibe categories have different half-lives
+ * Manages how cultural vibes lose relevance over time using exponential decay.
+ * This module is the heart of Zeitgeist's time-aware cultural graph.
+ *
+ * Core Concept: Cultural trends don't last forever. A meme from last week is
+ * less relevant than one from today. This system models that natural decay
+ * mathematically, ensuring the graph always reflects current cultural reality.
+ *
+ * Why Exponential Decay: Cultural relevance doesn't decrease linearly. Things
+ * fade quickly at first, then slowly. Exponential decay (half-life model)
+ * matches this natural pattern and is easily tunable per category.
+ *
+ * Architecture Decision: All decay functions are pure (no side effects) and
+ * take time as a parameter. This makes them easy to test, reason about, and
+ * use in different contexts.
+ *
+ * Key Features:
+ * - Category-specific half-lives (memes decay faster than movements)
+ * - Automatic boosting when vibes reappear
+ * - Halo effect: similar vibes get boosted together
+ * - Smart filtering to remove dead trends
+ *
+ * @module TemporalDecay
  */
 
 import { Vibe, VibeCategory } from './types';
@@ -23,14 +43,46 @@ export const DEFAULT_HALF_LIVES: Record<VibeCategory, number> = {
 };
 
 /**
- * Calculate relevance decay using exponential decay
+ * Calculate current relevance using exponential decay
  *
- * Formula: currentRelevance = initialStrength * (0.5 ^ (daysSinceLastSeen / halfLife))
+ * This is the core decay formula. It calculates how relevant a vibe is right now
+ * based on when it was last seen, using the half-life model from physics/chemistry.
  *
- * This means:
- * - After 1 half-life: 50% relevance
- * - After 2 half-lives: 25% relevance
- * - After 3 half-lives: 12.5% relevance
+ * Formula: currentRelevance = strength * (0.5 ^ (daysSince / halfLife))
+ *
+ * Example timeline for a meme (half-life = 3 days, strength = 1.0):
+ * - Day 0 (just seen): 100% relevance
+ * - Day 1.5: 70% relevance
+ * - Day 3 (one half-life): 50% relevance
+ * - Day 6 (two half-lives): 25% relevance
+ * - Day 9 (three half-lives): 12.5% relevance
+ *
+ * Why it works: Exponential decay captures how cultural trends fade - quickly at
+ * first, then more slowly. It's mathematically elegant and matches empirical
+ * observations of meme lifecycles, news cycles, etc.
+ *
+ * Edge cases handled:
+ * - Very recent vibes (< 1 hour): No decay applied
+ * - Invalid strength values: Clamped to [0, 1]
+ * - Zero/negative half-life: Falls back to rapid decay
+ * - Very small relevance: Floored at 0.01 to prevent wasteful computation
+ *
+ * @param vibe - The vibe to calculate decay for
+ * @param now - Current time (defaults to now, injectable for testing)
+ * @returns Current relevance score (0-1)
+ *
+ * @example
+ * ```typescript
+ * const vibe = {
+ *   strength: 0.9,
+ *   category: 'meme',
+ *   lastSeen: new Date('2025-11-20'),
+ *   halfLife: 3
+ * };
+ *
+ * const relevance = calculateDecay(vibe, new Date('2025-11-23'));
+ * console.log(relevance); // ~0.45 (half of 0.9 after 3 days)
+ * ```
  */
 export function calculateDecay(vibe: Vibe, now: Date = new Date()): number {
   // BUG-001 FIX: Validate strength is within [0, 1]
@@ -87,8 +139,33 @@ export function filterDecayedVibes(
 }
 
 /**
- * Boost a vibe when it's seen again
- * This prevents good trends from dying if they keep appearing
+ * Boost a vibe when it's observed again in new data
+ *
+ * When we detect a vibe that already exists in the graph, we boost its strength
+ * and reset its lastSeen timestamp. This prevents popular recurring trends from
+ * dying out prematurely.
+ *
+ * Why boost: If a vibe keeps appearing in fresh content, it's clearly still
+ * culturally relevant. The boost rewards this persistence.
+ *
+ * Why 0.2 default: Small enough to not instantly max out strength, large enough
+ * to be meaningful. After 5 re-appearances, a vibe will be at maximum strength.
+ *
+ * @param vibe - The vibe that was re-detected
+ * @param boostAmount - How much to increase strength (default: 0.2)
+ * @returns Updated vibe with boosted strength and updated lastSeen
+ *
+ * @example
+ * ```typescript
+ * const oldVibe = {
+ *   strength: 0.5,
+ *   currentRelevance: 0.3, // Decayed
+ *   lastSeen: new Date('2025-11-20')
+ * };
+ *
+ * const boosted = boostVibe(oldVibe, 0.2);
+ * // strength: 0.7, lastSeen: now, currentRelevance: 0.5
+ * ```
  */
 export function boostVibe(vibe: Vibe, boostAmount = 0.2): Vibe {
   return {
@@ -177,7 +254,52 @@ export function getTemporalStats(vibes: Vibe[], now: Date = new Date()) {
 }
 
 /**
- * Configure custom half-life for a vibe based on heuristics
+ * Calculate an intelligent half-life for a vibe based on multiple factors
+ *
+ * Instead of using just the category's default half-life, this function adjusts
+ * it based on the vibe's properties to make decay more accurate.
+ *
+ * Factors considered:
+ * 1. Category base: Memes decay faster (3 days) than movements (90 days)
+ * 2. Strength: Stronger vibes last longer (0.7x to 1.3x multiplier)
+ * 3. Sentiment: Mixed/controversial vibes decay faster (0.8x multiplier)
+ * 4. Source count: More sources = more staying power (up to 1.5x multiplier)
+ *
+ * Why these factors:
+ * - Strong vibes: High strength indicates widespread adoption → slower decay
+ * - Mixed sentiment: Controversial things fade as people lose interest
+ * - Multiple sources: Cross-platform presence indicates deeper cultural penetration
+ *
+ * Example calculations:
+ * - Weak meme (strength 0.5, 1 source): 3 * 0.9 * 1.0 * 1.05 = 2.8 days
+ * - Strong trend (strength 0.9, 5 sources): 14 * 1.2 * 1.0 * 1.25 = 21 days
+ * - Controversial aesthetic (strength 0.7, mixed, 2 sources): 60 * 1.1 * 0.8 * 1.1 = 58 days
+ *
+ * @param vibe - The vibe to calculate half-life for
+ * @returns Suggested half-life in days (minimum 1 day)
+ *
+ * @example
+ * ```typescript
+ * const meme = {
+ *   category: 'meme',
+ *   strength: 0.3,  // Weak
+ *   sentiment: 'positive',
+ *   sources: ['reddit.com']
+ * };
+ *
+ * const halfLife = suggestHalfLife(meme);
+ * // ~2.5 days (weak meme decays faster than 3-day default)
+ *
+ * const movement = {
+ *   category: 'movement',
+ *   strength: 0.9,  // Strong
+ *   sentiment: 'positive',
+ *   sources: ['twitter.com', 'news.com', 'reddit.com']
+ * };
+ *
+ * const movementHalfLife = suggestHalfLife(movement);
+ * // ~130 days (strong movement with multiple sources lasts longer)
+ * ```
  */
 export function suggestHalfLife(vibe: Vibe): number {
   const baseHalfLife = DEFAULT_HALF_LIVES[vibe.category] || 14;

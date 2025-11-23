@@ -1,8 +1,35 @@
 /**
  * Zeitgeist Service
- * Main orchestration layer that ties everything together
  *
- * Updated: Now uses dependency injection for better testability and flexibility
+ * The central orchestrator that coordinates data collection, analysis, and advice generation
+ * for the Zeitgeist cultural graph system.
+ *
+ * Architecture Decision: This service uses dependency injection to allow for flexible
+ * configuration and easy testing. It can work with different storage backends, collectors,
+ * analyzers, and matchers without modifying core logic.
+ *
+ * Key Responsibilities:
+ * - Orchestrate the collection-analysis-storage pipeline
+ * - Manage temporal decay of cultural vibes
+ * - Match scenarios to relevant vibes
+ * - Generate personalized advice using LLMs
+ * - Maintain the cultural graph state
+ *
+ * Usage:
+ * ```typescript
+ * // Use default instance
+ * import { zeitgeist } from '@/lib/zeitgeist-service';
+ * await zeitgeist.updateGraph();
+ * const advice = await zeitgeist.getAdvice(scenario);
+ *
+ * // Or create custom instance for testing
+ * const service = createZeitgeistService({
+ *   store: mockStore,
+ *   collectors: testCollectors
+ * });
+ * ```
+ *
+ * @module ZeitgeistService
  */
 
 import { CollectorRegistry } from './collectors/base';
@@ -84,6 +111,35 @@ export class ZeitgeistService {
 
   /**
    * Collect new data and update the cultural graph
+   *
+   * This is the main pipeline that keeps the cultural graph fresh. It:
+   * 1. Collects raw content from all available sources (news, Reddit, etc.)
+   * 2. Analyzes content to extract cultural vibes using LLM
+   * 3. Generates embeddings for semantic search
+   * 4. Merges new vibes with existing ones (with halo effect for related vibes)
+   * 5. Applies temporal decay to all vibes
+   * 6. Filters out vibes below relevance threshold (5%)
+   * 7. Persists to storage
+   *
+   * Why this approach: We batch operations for efficiency and apply decay before
+   * storage to ensure the graph always reflects current cultural relevance.
+   * The halo effect prevents premature decay of related vibes when one reappears.
+   *
+   * @param options - Optional collection parameters (limit, keywords, date range)
+   * @returns Object containing count of newly added vibes
+   *
+   * @example
+   * ```typescript
+   * // Collect with defaults
+   * const result = await zeitgeist.updateGraph();
+   * console.log(`Added ${result.vibesAdded} vibes`);
+   *
+   * // Collect with options
+   * const result = await zeitgeist.updateGraph({
+   *   limit: 10,
+   *   keywords: ['AI', 'technology']
+   * });
+   * ```
    */
   async updateGraph(options?: CollectorOptions): Promise<{ vibesAdded: number }> {
     await this.initialize();
@@ -125,7 +181,40 @@ export class ZeitgeistService {
   }
 
   /**
-   * Get advice for a scenario
+   * Get personalized advice for a social scenario
+   *
+   * Analyzes the user's scenario against the current cultural graph to provide
+   * relevant, timely recommendations for topics to discuss, behavior, and style.
+   *
+   * Process:
+   * 1. Loads the current cultural graph from storage
+   * 2. Matches scenario to relevant vibes using semantic similarity + LLM reasoning
+   * 3. Generates structured advice using LLM with matched vibes as context
+   * 4. Returns actionable recommendations with confidence score
+   *
+   * Why two-stage LLM: First stage (matching) focuses on relevance, second stage
+   * (advice) focuses on creativity. This separation improves both quality and speed.
+   *
+   * @param scenario - User's social situation with optional context and preferences
+   * @returns Structured advice including topics, behavior, and style recommendations
+   *
+   * @example
+   * ```typescript
+   * const advice = await zeitgeist.getAdvice({
+   *   description: "Dinner with tech startup founders",
+   *   context: {
+   *     location: "San Francisco",
+   *     formality: "casual"
+   *   },
+   *   preferences: {
+   *     topics: ["technology", "startups"],
+   *     avoid: ["politics"]
+   *   }
+   * });
+   *
+   * console.log(advice.recommendations.topics);
+   * // [{ topic: "AI Development", talking_points: [...], priority: "high" }]
+   * ```
    */
   async getAdvice(scenario: Scenario): Promise<Advice> {
     await this.initialize();
@@ -146,7 +235,27 @@ export class ZeitgeistService {
   }
 
   /**
-   * Get current state of the cultural graph
+   * Get current state and statistics of the cultural graph
+   *
+   * Provides a comprehensive snapshot of the graph including vibe counts by category,
+   * temporal statistics (average age, relevance distribution), and top vibes.
+   * All statistics reflect real-time temporal decay.
+   *
+   * Use this endpoint to:
+   * - Monitor graph health and freshness
+   * - Debug collection issues
+   * - Understand cultural trends over time
+   * - Display dashboard metrics
+   *
+   * @returns Object containing counts, categories, temporal stats, and top vibes
+   *
+   * @example
+   * ```typescript
+   * const status = await zeitgeist.getGraphStatus();
+   * console.log(`Graph has ${status.totalVibes} vibes`);
+   * console.log(`Average relevance: ${status.temporal.averageRelevance}`);
+   * console.log(`Top vibe: ${status.topVibes[0].name}`);
+   * ```
    */
   async getGraphStatus() {
     await this.initialize();
@@ -190,7 +299,31 @@ export class ZeitgeistService {
   }
 
   /**
-   * Search vibes
+   * Search for vibes using semantic similarity
+   *
+   * Converts the query to an embedding vector and finds the most similar vibes
+   * in the graph using cosine similarity. This enables natural language search
+   * across the cultural graph.
+   *
+   * Requirements:
+   * - Embedding provider must be configured (Ollama or OpenAI)
+   * - Vibes must have embeddings (generated during collection)
+   *
+   * @param query - Natural language search query
+   * @param limit - Maximum number of results to return (default: 20)
+   * @returns Array of vibes sorted by similarity to query
+   *
+   * @throws Error if embedding provider is not configured
+   *
+   * @example
+   * ```typescript
+   * // Find vibes related to AI
+   * const vibes = await zeitgeist.searchVibes("artificial intelligence", 10);
+   * vibes.forEach(v => console.log(v.name, v.currentRelevance));
+   *
+   * // Find aesthetic vibes
+   * const aesthetics = await zeitgeist.searchVibes("minimalist design");
+   * ```
    */
   async searchVibes(query: string, limit = 20): Promise<Vibe[]> {
     await this.initialize();
@@ -204,7 +337,21 @@ export class ZeitgeistService {
   }
 
   /**
-   * Ensure all vibes have embeddings
+   * Ensure all vibes have embedding vectors for semantic search
+   *
+   * Generates embeddings for vibes that don't have them yet. Embeddings enable:
+   * - Semantic search across vibes
+   * - Similarity-based matching for advice
+   * - Halo effect calculations based on semantic proximity
+   *
+   * Why batching: We process 10 vibes at a time to balance speed and memory usage.
+   * Why graceful failure: If embedding generation fails, we continue without it
+   * rather than failing the entire collection pipeline. Some features (search,
+   * semantic matching) will be limited, but basic functionality remains.
+   *
+   * @param vibes - Array of vibes that may need embeddings
+   * @returns Same vibes array with embeddings added where missing
+   * @private
    */
   private async ensureEmbeddings(vibes: Vibe[]): Promise<Vibe[]> {
     const vibesNeedingEmbeddings = vibes.filter(v => !v.embedding);
@@ -238,7 +385,25 @@ export class ZeitgeistService {
   }
 
   /**
-   * Generate advice from matched vibes using local LLM
+   * Generate structured advice from matched vibes using local LLM
+   *
+   * Constructs a detailed prompt with the scenario and matched vibes, then asks
+   * the LLM to generate specific, actionable recommendations for topics, behavior,
+   * and style. The response is parsed as JSON and returned as structured advice.
+   *
+   * Why JSON output: Forces the LLM to structure its response consistently,
+   * making it easier to display in the UI and ensuring all required fields are present.
+   *
+   * Why high temperature (0.7): We want creative, varied recommendations rather than
+   * deterministic output. Social advice benefits from diversity.
+   *
+   * Why robust parsing: LLMs sometimes include extra text before/after JSON.
+   * We extract JSON using regex and handle parse errors gracefully.
+   *
+   * @param scenario - User's social situation
+   * @param matches - Vibes matched to the scenario with relevance scores
+   * @returns Structured advice with recommendations and confidence score
+   * @private
    */
   private async generateAdvice(scenario: Scenario, matches: any[]): Promise<Advice> {
     const prompt = `You are a cultural advisor helping someone navigate a social situation.

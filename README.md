@@ -84,8 +84,14 @@ LMSTUDIO_MODEL=local-model
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=llama2
 
-# Required for embeddings
-OPENAI_API_KEY=sk-...
+# Embeddings - Choose one:
+# Option 1: Local (FREE) - Recommended for zero-cost operation
+EMBEDDING_PROVIDER=ollama
+OLLAMA_EMBEDDING_MODEL=nomic-embed-text
+
+# Option 2: Cloud (PAID) - Higher quality embeddings
+# EMBEDDING_PROVIDER=openai
+# OPENAI_API_KEY=sk-...
 
 # Optional: News Collection
 NEWS_API_KEY=...
@@ -342,6 +348,17 @@ The modular architecture makes it easy to experiment:
 
 MIT
 
+## Documentation
+
+Comprehensive guides for developers:
+
+- **[Developer Guide](docs/DEVELOPER_GUIDE.md)** - Get started contributing in < 30 minutes
+- **[Testing Guide](claude_docs/*_testing-guide_*.md)** - Complete manual testing procedures
+- **[Code Navigation Guide](claude_docs/*_navigation-guide_*.md)** - Navigate and extend the codebase
+- **[API Documentation](docs/API_DOCUMENTATION.md)** - Complete API reference
+- **[Architecture](docs/ARCHITECTURE.md)** - Technical deep dive
+- **[Deployment](docs/DEPLOYMENT.md)** - Deploy to production
+
 ## Contributing
 
-Contributions welcome! The modular architecture makes it easy to add new features.
+Contributions welcome! The modular architecture makes it easy to add new features. See the [Developer Guide](docs/DEVELOPER_GUIDE.md) to get started.
