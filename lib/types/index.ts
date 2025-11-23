@@ -40,8 +40,15 @@ export interface Vibe {
 
   // Contextual data
   demographics?: string[]; // Who is this vibe relevant to?
-  locations?: string[]; // Geographic relevance
+  locations?: string[]; // Geographic relevance (legacy - use geography instead)
   domains?: string[]; // fashion, tech, politics, etc.
+
+  // Regional metadata (NEW - 2025)
+  geography?: {
+    primary: string; // Primary region: "US-West", "US-East", "EU-UK", "Global", etc.
+    relevance: Record<string, number>; // Region-specific relevance scores (0-1)
+    detectedFrom: string[]; // Source URLs that indicate regional relevance
+  };
 
   // Raw metadata for extensibility
   metadata?: Record<string, any>;
@@ -58,6 +65,23 @@ export type VibeCategory =
   | 'custom';      // For experimentation
 
 export type Sentiment = 'positive' | 'negative' | 'neutral' | 'mixed';
+
+/**
+ * Geographic regions for vibe filtering (NEW - 2025)
+ */
+export type Region =
+  | 'Global'       // Worldwide relevance
+  | 'US-West'      // California, Oregon, Washington
+  | 'US-East'      // NYC, Boston, DC area
+  | 'US-Central'   // Midwest + Texas
+  | 'US-South'     // Southeast
+  | 'EU-UK'        // United Kingdom
+  | 'EU-Central'   // France, Germany, etc.
+  | 'EU-North'     // Scandinavia
+  | 'Asia-Pacific' // General Asia-Pacific
+  | 'Latin-America'// Latin America
+  | 'Africa'       // Africa
+  | 'Middle-East'; // Middle East
 
 /**
  * Raw content collected from sources

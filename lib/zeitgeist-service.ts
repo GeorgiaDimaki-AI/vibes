@@ -14,7 +14,7 @@ import {
 import { getGraphStore } from './graph';
 import { Scenario, Advice, Vibe, CollectorOptions } from './types';
 import { getLLM } from './llm';
-import OpenAI from 'openai';
+import { getEmbeddingProvider } from './embeddings';
 import {
   applyDecayToVibes,
   filterDecayedVibes,
@@ -155,14 +155,9 @@ export class ZeitgeistService {
   async searchVibes(query: string, limit = 20): Promise<Vibe[]> {
     await this.initialize();
 
-    // Generate embedding for query
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    const response = await openai.embeddings.create({
-      model: 'text-embedding-3-small',
-      input: query,
-    });
-
-    const embedding = response.data[0].embedding;
+    // Generate embedding for query using configured provider
+    const embeddingProvider = await getEmbeddingProvider();
+    const embedding = await embeddingProvider.generateEmbedding(query);
 
     // Search by embedding
     return this.store.findVibesByEmbedding(embedding, limit);
@@ -172,31 +167,31 @@ export class ZeitgeistService {
    * Ensure all vibes have embeddings
    */
   private async ensureEmbeddings(vibes: Vibe[]): Promise<Vibe[]> {
-    if (!process.env.OPENAI_API_KEY) {
-      console.warn('No OpenAI key, skipping embeddings');
-      return vibes;
-    }
-
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     const vibesNeedingEmbeddings = vibes.filter(v => !v.embedding);
 
     if (vibesNeedingEmbeddings.length === 0) return vibes;
 
-    console.log(`Generating embeddings for ${vibesNeedingEmbeddings.length} vibes...`);
+    try {
+      const embeddingProvider = await getEmbeddingProvider();
+      console.log(`[${embeddingProvider.name}] Generating embeddings for ${vibesNeedingEmbeddings.length} vibes...`);
 
-    // Generate embeddings in batches
-    for (let i = 0; i < vibesNeedingEmbeddings.length; i += 10) {
-      const batch = vibesNeedingEmbeddings.slice(i, i + 10);
-      const texts = batch.map(v => `${v.name}: ${v.description}. Keywords: ${v.keywords.join(', ')}`);
+      // Generate texts for embedding
+      const texts = vibesNeedingEmbeddings.map(v =>
+        `${v.name}: ${v.description}. Keywords: ${v.keywords.join(', ')}`
+      );
 
-      const response = await openai.embeddings.create({
-        model: 'text-embedding-3-small',
-        input: texts,
+      // Generate embeddings in batches
+      const embeddings = await embeddingProvider.generateEmbeddings(texts, { batchSize: 10 });
+
+      // Assign embeddings to vibes
+      embeddings.forEach((embedding, idx) => {
+        vibesNeedingEmbeddings[idx].embedding = embedding;
       });
 
-      response.data.forEach((item, idx) => {
-        batch[idx].embedding = item.embedding;
-      });
+      console.log(`[${embeddingProvider.name}] Successfully generated ${embeddings.length} embeddings`);
+    } catch (error) {
+      console.error('Failed to generate embeddings:', error);
+      console.warn('Continuing without embeddings - some features may be limited');
     }
 
     return vibes;

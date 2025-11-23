@@ -47,27 +47,37 @@ cp .env.example .env.local
 Edit `.env.local`:
 
 ```env
-# Choose your LLM provider
-LLM_PROVIDER=lmstudio  # or ollama
+# LLM Provider
+LLM_PROVIDER=ollama  # or lmstudio
 
-# LM Studio Configuration
+# Ollama Configuration (Recommended)
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=llama3
+
+# LM Studio Configuration (Alternative)
 LMSTUDIO_BASE_URL=http://localhost:1234/v1
 LMSTUDIO_MODEL=local-model
 LMSTUDIO_API_KEY=lm-studio
 
-# Ollama Configuration
-OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=llama2
+# Embedding Provider (NEW - Choose one)
+EMBEDDING_PROVIDER=ollama  # or openai
 
-# Required: OpenAI for embeddings
+# Ollama Embeddings (FREE - Recommended)
+OLLAMA_EMBEDDING_MODEL=nomic-embed-text
+
+# OpenAI Embeddings (Paid - Optional for higher quality)
 OPENAI_API_KEY=sk-your-key-here
 
 # Optional: News Collection
 NEWS_API_KEY=your-newsapi-key
 
-# Leave these for now (in-memory store will be used)
+# Database (optional, uses in-memory if not set)
 # POSTGRES_URL=
-# CRON_SECRET=
+```
+
+**Important**: If using `EMBEDDING_PROVIDER=ollama`, you must first pull the embedding model:
+```bash
+ollama pull nomic-embed-text
 ```
 
 ### Step 4: Run Development Server
@@ -203,9 +213,54 @@ echo $LLM_PROVIDER
 - Look at console logs for errors
 
 #### Embeddings Failing
-- Verify OpenAI API key
-- Check API usage limits
+- If using OpenAI: Verify API key and usage limits
+- If using Ollama: Verify model is downloaded (`ollama list`)
+- Check that EMBEDDING_PROVIDER is set correctly
 - Try with fewer vibes
+
+## ngrok Setup (Remote Access During Development)
+
+If you want to access your local Ollama from Vercel (during development before VPS):
+
+### Step 1: Install ngrok
+```bash
+# Mac
+brew install ngrok
+
+# Or download from https://ngrok.com/download
+```
+
+### Step 2: Expose Ollama
+```bash
+# Start ngrok tunnel to Ollama
+ngrok http 11434
+
+# You'll see output like:
+# Forwarding  https://xxxx-xx-xx-xxx-xxx.ngrok-free.app -> http://localhost:11434
+```
+
+### Step 3: Update Environment Variables
+```bash
+# In your local .env.local (for testing Vercel deployment locally)
+OLLAMA_BASE_URL=https://xxxx-xx-xx-xxx-xxx.ngrok-free.app
+
+# In Vercel dashboard (for production)
+# Settings -> Environment Variables -> Add
+# OLLAMA_BASE_URL = https://xxxx-xx-xx-xxx-xxx.ngrok-free.app
+```
+
+### Step 4: Keep ngrok Running
+```bash
+# Run in background or separate terminal
+# ngrok URL changes on restart (free tier)
+# Consider upgrading for static domain ($8/month)
+```
+
+### Limitations
+- **Free tier**: 1 domain, 40 connections/min, URL changes on restart
+- **Security**: Your local machine is exposed to internet
+- **Reliability**: Requires local machine always on
+- **Recommended**: Use for development only, move to VPS for production
 
 ## Production Deployment (Vercel)
 
@@ -499,27 +554,32 @@ curl http://localhost:3000/api/export > vibes-backup.json
 
 3. Use connection pooling (Vercel Postgres does this automatically)
 
-## Cost Estimates
+## Cost Estimates (Updated 2025)
 
-### Development (Local)
-- LLM: $0 (local)
-- Embeddings: ~$0.10/month (10K vibes × $0.0001 per 1K tokens)
-- Database: $0 (in-memory)
-- **Total: ~$0.10/month**
+### Personal Use (Free Tier Target: $0/year)
+- **LLM**: $0 (local Ollama)
+- **Embeddings**: $0 (local Ollama with nomic-embed-text)
+- **Database**: $0 (in-memory or SQLite)
+- **Hosting**: $0 (local or ngrok tunnel)
+- **Total: $0/year** ✅
 
-### Production (Vercel)
-- LLM: $5-50/month (VPS) or $0 (keep local)
-- Embeddings: ~$1/month (hourly collection)
-- Database: $0 (Vercel free tier up to 256MB)
-- Vercel hosting: $0 (Hobby tier)
-- **Total: $1-51/month**
+### Small-Scale Production (1-100 users)
+- **VPS**: $5-6/month (Hetzner/DigitalOcean - runs Ollama + PostgreSQL)
+- **Embeddings**: $0 (local Ollama on VPS)
+- **LLM**: $0 (local Ollama on VPS)
+- **Frontend**: $0 (Vercel Hobby tier)
+- **User Database**: $0 (Vercel Postgres free tier)
+- **Total: $5-6/month**
+- **Breakeven**: 2 users at $3/month
 
-### Production (High Traffic)
-- LLM: $50-200/month (better VPS)
-- Embeddings: ~$10/month (more collections)
-- Database: $20/month (Vercel Pro, >256MB)
-- Vercel hosting: $20/month (Pro tier)
-- **Total: $100-250/month**
+### Medium-Scale Production (100-1000 users)
+- **VPS**: $20/month (upgraded for more RAM/CPU)
+- **Embeddings**: $0 (still local) OR $5/month (OpenAI for premium tier)
+- **LLM**: $0 (local Ollama)
+- **Frontend**: $0-20/month (Vercel Pro if needed)
+- **Database**: $20/month (Vercel Postgres Pro)
+- **Total: $40-65/month**
+- **Profit at 100 users**: ~$200/month (at $3 avg per user)
 
 ## Next Steps After Deployment
 

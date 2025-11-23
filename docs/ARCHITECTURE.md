@@ -2,6 +2,8 @@
 
 ## System Architecture
 
+### Updated Architecture: Global Graph Model
+
 ```
 ┌─────────────────────────────────────────────┐
 │         Next.js App (Vercel)                 │
@@ -9,6 +11,7 @@
 │  │  UI Layer (React + Tailwind)         │   │
 │  │  - Chat interface                    │   │
 │  │  - Advice display                    │   │
+│  │  - Graph visualization (NEW)         │   │
 │  │  - Status dashboard                  │   │
 │  └─────────────┬───────────────────────┘   │
 │                │                             │
@@ -18,6 +21,7 @@
 │  │  - GET/POST /api/collect             │   │
 │  │  - GET /api/status                   │   │
 │  │  - GET /api/search                   │   │
+│  │  - GET /api/graph (NEW)              │   │
 │  │  - GET /api/cron (Vercel Cron)       │   │
 │  └─────────────┬───────────────────────┘   │
 └────────────────┼─────────────────────────────┘
@@ -25,9 +29,11 @@
 ┌────────────────▼─────────────────────────────┐
 │      ZeitgeistService (Orchestration)        │
 │  - Coordinates collectors/analyzers/matchers │
-│  - Manages graph updates                     │
+│  - Manages GLOBAL GRAPH (shared by all)     │
 │  - Applies temporal decay                    │
 │  - Handles halo effects                      │
+│  - Regional filtering (NEW)                  │
+│  - Personalized matching (NEW)               │
 └────┬────────────┬────────────────┬───────────┘
      │            │                │
 ┌────▼─────┐ ┌───▼────────┐  ┌───▼──────────┐
@@ -35,21 +41,32 @@
 │(Registry)│ │ (Registry) │  │  (Registry)  │
 └────┬─────┘ └───┬────────┘  └───┬──────────┘
      │           │                │
-┌────▼──────────┬▼────────────────▼───────────┐
-│        GRAPH STORE (Postgres/Memory)        │
+     │           │                │
+┌────▼───────────▼────────────────▼───────────┐
+│    GLOBAL CULTURAL GRAPH                    │
+│    (Postgres/Memory/SQLite)                 │
 │  - Vibes with embeddings                    │
+│  - Regional metadata (NEW)                  │
 │  - Temporal metadata (firstSeen, lastSeen)  │
-│  - Edges (relationships)                    │
-│  - Supports pgvector for similarity search  │
+│  - Halo connections (edges)                 │
+│  - Shared by ALL users                      │
 └────────────────┬────────────────────────────┘
                  │
          ┌───────┴────────┐
          │                │
     ┌────▼─────┐    ┌────▼──────┐
-    │ Postgres │    │  Memory   │
-    │ +pgvector│    │  (Dev)    │
+    │ Postgres │    │ Memory/   │
+    │ +pgvector│    │ SQLite    │
     └──────────┘    └───────────┘
 ```
+
+### Key Architecture Changes (2025)
+
+1. **Global Graph**: Single shared cultural graph for all users (not per-user)
+2. **Regional Metadata**: Vibes tagged with geographic relevance
+3. **Personalization Layer**: Users get filtered/boosted views of global graph
+4. **Local Embeddings**: Ollama support for $0 embedding costs
+5. **Graph Visualization**: Interactive D3.js visualization of cultural graph
 
 ## Technology Stack
 
@@ -86,11 +103,15 @@
 - Full control over models
 - Works offline
 
-**Why Keep OpenAI Embeddings?**
-- Embeddings are cheap ($0.0001 per 1K tokens)
-- Very high quality (text-embedding-3-small)
-- Hard to replicate locally with same quality
-- Small cost, huge value
+### Embedding Layer (NEW)
+- **Ollama** (Local, Free): nomic-embed-text, mxbai-embed-large
+- **OpenAI** (Cloud, Paid): text-embedding-3-small
+- **Unified Interface**: Provider factory pattern
+
+**Why Support Both?**
+- **Ollama**: $0 cost, privacy, works offline (free tier)
+- **OpenAI**: Higher quality, faster (paid tier option)
+- **Factory Pattern**: Easy switching based on environment/tier
 
 ### Database
 - **Vercel Postgres** (Production): PostgreSQL with pgvector
@@ -102,7 +123,7 @@
 - Free tier on Vercel
 - Can handle temporal queries efficiently
 
-**Schema Design**:
+**Schema Design** (Updated):
 ```sql
 CREATE TABLE vibes (
   id TEXT PRIMARY KEY,
@@ -110,7 +131,7 @@ CREATE TABLE vibes (
   description TEXT,
   category TEXT,
   keywords TEXT[],
-  embedding vector(1536),  -- pgvector
+  embedding vector(768),   -- pgvector (768 for nomic-embed, 1536 for OpenAI)
   strength REAL,
   sentiment TEXT,
   timestamp TIMESTAMPTZ,
@@ -118,6 +139,12 @@ CREATE TABLE vibes (
   last_seen TIMESTAMPTZ,   -- Temporal decay
   current_relevance REAL,  -- Temporal decay
   half_life REAL,          -- Temporal decay
+  geography JSONB,         -- NEW: Regional metadata
+  -- geography: {
+  --   primary: "US-West",
+  --   relevance: {"US-West": 0.9, "US-East": 0.4, "Global": 0.5},
+  --   detectedFrom: ["url1", "url2"]
+  -- }
   -- ... other fields
 );
 ```

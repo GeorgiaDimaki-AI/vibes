@@ -3,22 +3,13 @@
  * Uses embeddings to match scenarios to vibes based on semantic similarity
  */
 
-import OpenAI from 'openai';
 import { BaseMatcher } from './base';
 import { Scenario, CulturalGraph, VibeMatch } from '@/lib/types';
+import { getEmbeddingProvider } from '@/lib/embeddings';
 
 export class SemanticMatcher extends BaseMatcher {
   readonly name = 'semantic';
   readonly description = 'Matches scenarios to vibes using semantic similarity';
-
-  private client: OpenAI;
-
-  constructor() {
-    super();
-    this.client = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
-  }
 
   async match(scenario: Scenario, graph: CulturalGraph): Promise<VibeMatch[]> {
     try {
@@ -74,12 +65,8 @@ export class SemanticMatcher extends BaseMatcher {
   }
 
   private async getEmbedding(text: string): Promise<number[]> {
-    const response = await this.client.embeddings.create({
-      model: 'text-embedding-3-small',
-      input: text,
-    });
-
-    return response.data[0].embedding;
+    const embeddingProvider = await getEmbeddingProvider();
+    return await embeddingProvider.generateEmbedding(text);
   }
 
   private cosineSimilarity(a: number[], b: number[]): number {

@@ -8,9 +8,11 @@
 
 1. **Cultural Intelligence**: Build a system that truly understands current cultural moments
 2. **Temporal Awareness**: Trends should naturally emerge, peak, and fade like in real culture
-3. **Local-First**: Run entirely on local hardware (except embeddings) - no API costs
-4. **Modular & Experimental**: Easy to swap components and try new ideas
-5. **Self-Maintaining**: Graph should evolve automatically without manual curation
+3. **Zero-Cost Operation**: Run entirely on local hardware with $0 ongoing costs
+4. **Global Graph**: Single shared cultural graph that benefits all users
+5. **Modular & Experimental**: Easy to swap components and try new ideas
+6. **Self-Maintaining**: Graph should evolve automatically without manual curation
+7. **Accessible Pricing**: If commercialized, keep pricing accessible ($3-7/month range)
 
 ## Key Design Decisions & Reasoning
 
@@ -59,11 +61,11 @@ haloBoost = (similarity - 0.6) / 0.4 × maxBoost
 // Similar vibes get boosted proportionally
 ```
 
-### 3. **Local LLM Support**
+### 3. **Local LLM & Embedding Support** (Updated 2025)
 
 **Problem**: Cloud API costs add up fast with hourly data collection.
 
-**Solution**: Support for LM Studio and Ollama - completely local inference.
+**Solution**: Support for LM Studio and Ollama - completely local inference for BOTH LLMs and embeddings.
 
 **Reasoning**:
 - Cost: $0 vs $$$ for cloud APIs
@@ -72,7 +74,11 @@ haloBoost = (similarity - 0.6) / 0.4 × maxBoost
 - Control: Choose your own models
 - Future-proof: Works even if APIs change
 
-**Trade-off**: Still use OpenAI for embeddings (high-quality, cheap, and hard to replicate locally).
+**Embedding Options**:
+- **Ollama** (Free): nomic-embed-text (768-dim, 85-90% quality of OpenAI)
+- **OpenAI** (Paid option): text-embedding-3-small (1536-dim, highest quality)
+
+**Factory Pattern**: Automatically selects available provider based on configuration.
 
 ### 4. **Modular Plugin Architecture**
 
@@ -107,6 +113,40 @@ analyzerRegistry.register(new MyAnalyzer());
 - LLM: Deep reasoning, context-aware extraction
 - Best of both worlds
 - Embeddings for matching, LLM for analysis and advice
+
+### 6. **Global Graph with Regional Filtering** (NEW - 2025)
+
+**Problem**: Each user maintaining their own graph is expensive and redundant.
+
+**Solution**: Single shared cultural graph with personalized filtering.
+
+**Reasoning**:
+- **Fixed costs**: Collection happens once, not per-user
+- **Better quality**: More data = richer, more accurate graph
+- **Regional awareness**: Vibes tagged with geographic relevance
+- **Personalization**: Users get filtered views based on location + interests
+- **Scalability**: 1 graph supports unlimited users
+
+**Implementation**:
+```typescript
+interface Vibe {
+  // ... existing fields
+  geography?: {
+    primary: string;           // "US-West", "EU-UK", "Global"
+    relevance: {
+      "US-West": 0.9,         // Highly relevant to SF/LA/Seattle
+      "US-East": 0.4,         // Somewhat relevant to NYC
+      "Global": 0.5           // Baseline global relevance
+    };
+    detectedFrom: string[];   // Source URLs
+  };
+}
+```
+
+**User Experience**:
+- Free tier: Global vibes only
+- Paid tier: Regional + interest filtering
+- Better advice through geographic + personal context
 
 ## User Journey
 
