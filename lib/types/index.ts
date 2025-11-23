@@ -97,6 +97,7 @@ export interface RawContent {
   body?: string;
   imageUrls?: string[];
   audioUrl?: string;
+  videoUrl?: string;
 
   // Metadata
   timestamp: Date;
