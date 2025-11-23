@@ -33,19 +33,29 @@ export const DEFAULT_HALF_LIVES: Record<VibeCategory, number> = {
  * - After 3 half-lives: 12.5% relevance
  */
 export function calculateDecay(vibe: Vibe, now: Date = new Date()): number {
+  // BUG-001 FIX: Validate strength is within [0, 1]
+  const strength = Math.max(0, Math.min(1, vibe.strength));
+
   const daysSinceLastSeen = (now.getTime() - vibe.lastSeen.getTime()) / (1000 * 60 * 60 * 24);
 
   // If seen very recently (< 1 hour), no decay
   if (daysSinceLastSeen < 1/24) {
-    return vibe.strength;
+    return strength;
   }
 
-  const halfLife = vibe.halfLife || DEFAULT_HALF_LIVES[vibe.category] || 14;
+  // BUG-002 FIX: Use nullish coalescing to handle halfLife = 0
+  const halfLife = vibe.halfLife ?? DEFAULT_HALF_LIVES[vibe.category] ?? 14;
+
+  // Additional safety: prevent division by zero
+  if (halfLife <= 0) {
+    console.warn(`Invalid halfLife (${halfLife}) for vibe ${vibe.id}, using default`);
+    return strength * 0.01; // Assume rapid decay
+  }
 
   // Exponential decay formula
   const decayFactor = Math.pow(0.5, daysSinceLastSeen / halfLife);
 
-  return vibe.strength * decayFactor;
+  return strength * decayFactor;
 }
 
 /**
@@ -67,7 +77,8 @@ export function filterDecayedVibes(
   now: Date = new Date()
 ): Vibe[] {
   return vibes.filter(vibe => {
-    const relevance = calculateDecay(vibe, now);
+    // PERF-001 FIX: Use cached currentRelevance if available
+    const relevance = vibe.currentRelevance ?? calculateDecay(vibe, now);
     return relevance >= threshold;
   });
 }
@@ -99,8 +110,9 @@ export function mergeVibeOccurrence(existing: Vibe, newVibe: Vibe): Vibe {
   return {
     ...existing,
     lastSeen: now,
-    strength: Math.min(1.0, existing.strength + boostAmount),
-    currentRelevance: Math.min(1.0, calculateDecay(existing, now) + boostAmount),
+    // BUG-003 FIX: Clamp both lower and upper bounds
+    strength: Math.max(0, Math.min(1.0, existing.strength + boostAmount)),
+    currentRelevance: Math.max(0, Math.min(1.0, calculateDecay(existing, now) + boostAmount)),
     keywords: Array.from(new Set([...existing.keywords, ...newVibe.keywords])),
     sources: Array.from(new Set([...existing.sources, ...newVibe.sources])),
     relatedVibes: Array.from(new Set([
@@ -126,6 +138,19 @@ export function sortByRelevance(vibes: Vibe[], now: Date = new Date()): Vibe[] {
  * Get statistics about vibe ages and decay
  */
 export function getTemporalStats(vibes: Vibe[], now: Date = new Date()) {
+  if (vibes.length === 0) {
+    return {
+      totalVibes: 0,
+      averageAge: 0,
+      averageDaysSinceLastSeen: 0,
+      averageRelevance: 0,
+      highlyRelevant: 0,
+      moderatelyRelevant: 0,
+      lowRelevance: 0,
+      decayed: 0,
+    };
+  }
+
   const ages = vibes.map(v => (now.getTime() - v.firstSeen.getTime()) / (1000 * 60 * 60 * 24));
   const recencies = vibes.map(v => (now.getTime() - v.lastSeen.getTime()) / (1000 * 60 * 60 * 24));
   const relevances = vibes.map(v => calculateDecay(v, now));
@@ -154,8 +179,11 @@ export function getTemporalStats(vibes: Vibe[], now: Date = new Date()) {
 export function suggestHalfLife(vibe: Vibe): number {
   const baseHalfLife = DEFAULT_HALF_LIVES[vibe.category] || 14;
 
+  // BUG-006 FIX: Clamp strength to [0, 1] before using
+  const clampedStrength = Math.max(0, Math.min(1, vibe.strength));
+
   // Adjust based on strength - stronger vibes last longer
-  const strengthMultiplier = 0.7 + (vibe.strength * 0.6); // 0.7 to 1.3
+  const strengthMultiplier = 0.7 + (clampedStrength * 0.6); // 0.7 to 1.3
 
   // Adjust based on sentiment - controversial things die faster
   const sentimentMultiplier = vibe.sentiment === 'mixed' ? 0.8 : 1.0;
@@ -163,7 +191,10 @@ export function suggestHalfLife(vibe: Vibe): number {
   // Adjust based on number of sources - more sources = more staying power
   const sourceMultiplier = Math.min(1.5, 1.0 + (vibe.sources.length * 0.05));
 
-  return baseHalfLife * strengthMultiplier * sentimentMultiplier * sourceMultiplier;
+  const suggestedHalfLife = baseHalfLife * strengthMultiplier * sentimentMultiplier * sourceMultiplier;
+
+  // BUG-007 FIX: Ensure minimum half-life of 1 day
+  return Math.max(1, suggestedHalfLife);
 }
 
 /**
@@ -182,7 +213,14 @@ function cosineSimilarity(a: number[], b: number[]): number {
     normB += b[i] * b[i];
   }
 
-  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+  const denominator = Math.sqrt(normA) * Math.sqrt(normB);
+  if (denominator === 0) return 0;
+
+  const similarity = dotProduct / denominator;
+
+  // BUG-005 FIX: Clamp to valid cosine similarity range [-1, 1]
+  // (handles numerical errors in floating point arithmetic)
+  return Math.max(-1, Math.min(1, similarity));
 }
 
 /**
@@ -241,7 +279,10 @@ export function applyHaloEffect(
       ...vibe,
       strength: Math.min(1.0, vibe.strength + haloBoost),
       currentRelevance: Math.min(1.0, vibe.currentRelevance + haloBoost),
-      lastSeen: now, // Update lastSeen to prevent decay
+      // BUG-004 FIX (CRITICAL): DO NOT update lastSeen for halo boosts
+      // Halo-boosted vibes should still decay naturally since they weren't actually observed
+      // Only strength and currentRelevance are boosted, lastSeen remains unchanged
+      // This preserves the semantic correctness of temporal tracking
       // Track that this was a halo boost in metadata
       metadata: {
         ...vibe.metadata,
