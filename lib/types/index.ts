@@ -306,3 +306,49 @@ export interface UserProfile {
   lastActive: Date;
   onboardingCompleted: boolean;
 }
+
+/**
+ * User's advice history tracking
+ */
+export interface AdviceHistory {
+  id: string;
+  userId: string;
+  timestamp: Date;
+  scenario: Scenario;
+  matchedVibes: string[];  // Vibe IDs
+  advice: Advice;
+  rating?: 1 | 2 | 3 | 4 | 5;
+  feedback?: string;
+  wasHelpful?: boolean;
+  regionFilterApplied?: string;
+  interestBoostsApplied: string[];
+}
+
+/**
+ * User favorites for vibes and advice
+ */
+export interface UserFavorite {
+  id: string;
+  userId: string;
+  type: 'vibe' | 'advice';
+  referenceId: string;
+  timestamp: Date;
+  note?: string;
+  // Denormalized data for quick access
+  metadata?: {
+    vibeName?: string;
+    scenarioDescription?: string;
+  };
+}
+
+/**
+ * Statistics about user's advice history
+ */
+export interface HistoryStats {
+  totalQueries: number;
+  averageRating?: number;
+  totalRatings: number;
+  helpfulCount: number;
+  mostCommonScenarios: Array<{ description: string; count: number }>;
+  topMatchedVibes: Array<{ vibeName: string; count: number }>;
+}

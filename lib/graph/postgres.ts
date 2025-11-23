@@ -5,7 +5,7 @@
 
 import { sql } from '@vercel/postgres';
 import { GraphStore } from './store';
-import { Vibe, CulturalGraph, GraphEdge, UserProfile } from '@/lib/types';
+import { Vibe, CulturalGraph, GraphEdge, UserProfile, AdviceHistory, UserFavorite } from '@/lib/types';
 
 /**
  * Validate embedding dimensions and values
@@ -635,6 +635,226 @@ export class PostgresGraphStore implements GraphStore {
       createdAt: new Date(row.created_at),
       lastActive: new Date(row.last_active),
       onboardingCompleted: row.onboarding_completed,
+    };
+  }
+
+  /**
+   * Save advice history
+   */
+  async saveAdviceHistory(history: AdviceHistory): Promise<void> {
+    try {
+      await sql`
+        INSERT INTO advice_history (
+          id, user_id, timestamp, scenario, matched_vibes, advice,
+          rating, feedback, was_helpful, region_filter_applied, interest_boosts_applied
+        ) VALUES (
+          ${history.id},
+          ${history.userId},
+          ${history.timestamp.toISOString()},
+          ${JSON.stringify(history.scenario)},
+          ${history.matchedVibes as any},
+          ${JSON.stringify(history.advice)},
+          ${history.rating || null},
+          ${history.feedback || null},
+          ${history.wasHelpful !== undefined ? history.wasHelpful : null},
+          ${history.regionFilterApplied || null},
+          ${history.interestBoostsApplied as any}
+        )
+      `;
+    } catch (error: any) {
+      console.error('Failed to save advice history:', {
+        historyId: history.id,
+        userId: history.userId,
+        error: error.message,
+      });
+      throw new Error(`Failed to save advice history: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get advice history for a user
+   */
+  async getAdviceHistory(
+    userId: string,
+    limit = 20,
+    offset = 0
+  ): Promise<AdviceHistory[]> {
+    const result = await sql`
+      SELECT * FROM advice_history
+      WHERE user_id = ${userId}
+      ORDER BY timestamp DESC
+      LIMIT ${limit}
+      OFFSET ${offset}
+    `;
+    return result.rows.map(row => this.rowToAdviceHistory(row));
+  }
+
+  /**
+   * Get a specific advice history item
+   */
+  async getAdviceHistoryItem(id: string): Promise<AdviceHistory | null> {
+    const result = await sql`
+      SELECT * FROM advice_history
+      WHERE id = ${id}
+    `;
+    if (result.rows.length === 0) return null;
+    return this.rowToAdviceHistory(result.rows[0]);
+  }
+
+  /**
+   * Update advice rating
+   */
+  async updateAdviceRating(
+    id: string,
+    rating: number,
+    feedback?: string
+  ): Promise<void> {
+    await sql`
+      UPDATE advice_history
+      SET rating = ${rating},
+          feedback = ${feedback || null}
+      WHERE id = ${id}
+    `;
+  }
+
+  /**
+   * Update advice helpful status
+   */
+  async updateAdviceHelpful(id: string, wasHelpful: boolean): Promise<void> {
+    await sql`
+      UPDATE advice_history
+      SET was_helpful = ${wasHelpful}
+      WHERE id = ${id}
+    `;
+  }
+
+  /**
+   * Delete a specific advice history item
+   */
+  async deleteAdviceHistory(id: string): Promise<void> {
+    await sql`DELETE FROM advice_history WHERE id = ${id}`;
+  }
+
+  /**
+   * Delete all advice history for a user
+   */
+  async deleteAllAdviceHistory(userId: string): Promise<void> {
+    await sql`DELETE FROM advice_history WHERE user_id = ${userId}`;
+  }
+
+  /**
+   * Convert database row to AdviceHistory
+   */
+  private rowToAdviceHistory(row: any): AdviceHistory {
+    return {
+      id: row.id,
+      userId: row.user_id,
+      timestamp: new Date(row.timestamp),
+      scenario: row.scenario,
+      matchedVibes: row.matched_vibes || [],
+      advice: row.advice,
+      rating: row.rating || undefined,
+      feedback: row.feedback || undefined,
+      wasHelpful: row.was_helpful !== null ? row.was_helpful : undefined,
+      regionFilterApplied: row.region_filter_applied || undefined,
+      interestBoostsApplied: row.interest_boosts_applied || [],
+    };
+  }
+
+  /**
+   * Save a favorite
+   */
+  async saveFavorite(favorite: UserFavorite): Promise<void> {
+    try {
+      await sql`
+        INSERT INTO user_favorites (
+          id, user_id, type, reference_id, timestamp, note
+        ) VALUES (
+          ${favorite.id},
+          ${favorite.userId},
+          ${favorite.type},
+          ${favorite.referenceId},
+          ${favorite.timestamp.toISOString()},
+          ${favorite.note || null}
+        )
+      `;
+    } catch (error: any) {
+      console.error('Failed to save favorite:', {
+        favoriteId: favorite.id,
+        userId: favorite.userId,
+        error: error.message,
+      });
+      throw new Error(`Failed to save favorite: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get favorites for a user
+   */
+  async getFavorites(userId: string, type?: string): Promise<UserFavorite[]> {
+    const result = type
+      ? await sql`
+          SELECT * FROM user_favorites
+          WHERE user_id = ${userId} AND type = ${type}
+          ORDER BY timestamp DESC
+        `
+      : await sql`
+          SELECT * FROM user_favorites
+          WHERE user_id = ${userId}
+          ORDER BY timestamp DESC
+        `;
+
+    return result.rows.map(row => this.rowToFavorite(row));
+  }
+
+  /**
+   * Get a specific favorite by ID
+   */
+  async getFavoriteById(id: string): Promise<UserFavorite | null> {
+    const result = await sql`
+      SELECT * FROM user_favorites
+      WHERE id = ${id}
+    `;
+    if (result.rows.length === 0) return null;
+    return this.rowToFavorite(result.rows[0]);
+  }
+
+  /**
+   * Delete a favorite
+   */
+  async deleteFavorite(id: string): Promise<void> {
+    await sql`DELETE FROM user_favorites WHERE id = ${id}`;
+  }
+
+  /**
+   * Check if a favorite exists
+   */
+  async checkFavoriteExists(
+    userId: string,
+    type: string,
+    referenceId: string
+  ): Promise<boolean> {
+    const result = await sql`
+      SELECT COUNT(*) as count FROM user_favorites
+      WHERE user_id = ${userId}
+        AND type = ${type}
+        AND reference_id = ${referenceId}
+    `;
+    return parseInt(result.rows[0].count) > 0;
+  }
+
+  /**
+   * Convert database row to UserFavorite
+   */
+  private rowToFavorite(row: any): UserFavorite {
+    return {
+      id: row.id,
+      userId: row.user_id,
+      type: row.type,
+      referenceId: row.reference_id,
+      timestamp: new Date(row.timestamp),
+      note: row.note || undefined,
+      // Note: metadata is populated by the service layer, not stored in DB
     };
   }
 }

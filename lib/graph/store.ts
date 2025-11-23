@@ -2,7 +2,7 @@
  * Graph Storage Interface and Implementations
  */
 
-import { Vibe, CulturalGraph, GraphEdge, UserProfile } from '@/lib/types';
+import { Vibe, CulturalGraph, GraphEdge, UserProfile, AdviceHistory, UserFavorite } from '@/lib/types';
 
 /**
  * Interface for graph storage
@@ -37,4 +37,20 @@ export interface GraphStore {
   deleteUser(userId: string): Promise<void>;
   incrementQueryCount(userId: string): Promise<void>;
   resetMonthlyQueries(): Promise<void>;
+
+  // Advice history operations
+  saveAdviceHistory(history: AdviceHistory): Promise<void>;
+  getAdviceHistory(userId: string, limit?: number, offset?: number): Promise<AdviceHistory[]>;
+  getAdviceHistoryItem(id: string): Promise<AdviceHistory | null>;
+  updateAdviceRating(id: string, rating: number, feedback?: string): Promise<void>;
+  updateAdviceHelpful(id: string, wasHelpful: boolean): Promise<void>;
+  deleteAdviceHistory(id: string): Promise<void>;
+  deleteAllAdviceHistory(userId: string): Promise<void>;
+
+  // Favorites operations
+  saveFavorite(favorite: UserFavorite): Promise<void>;
+  getFavorites(userId: string, type?: string): Promise<UserFavorite[]>;
+  getFavoriteById(id: string): Promise<UserFavorite | null>;
+  deleteFavorite(id: string): Promise<void>;
+  checkFavoriteExists(userId: string, type: string, referenceId: string): Promise<boolean>;
 }

@@ -4,7 +4,7 @@
  */
 
 import { GraphStore } from './store';
-import { Vibe, CulturalGraph, GraphEdge, UserProfile } from '@/lib/types';
+import { Vibe, CulturalGraph, GraphEdge, UserProfile, AdviceHistory, UserFavorite } from '@/lib/types';
 
 /**
  * Validate embedding dimensions and values
@@ -29,11 +29,17 @@ function validateEmbedding(embedding: number[] | undefined): void {
 export class MemoryGraphStore implements GraphStore {
   private static readonly MAX_VIBES = 100000; // Prevent unbounded memory growth
   private static readonly MAX_USERS = 10000; // Prevent unbounded memory growth
+  private static readonly MAX_HISTORY = 100000; // Prevent unbounded memory growth
+  private static readonly MAX_FAVORITES = 50000; // Prevent unbounded memory growth
   private vibes = new Map<string, Vibe>();
   private edges = new Map<string, GraphEdge>();
   private edgesByVibe = new Map<string, Set<string>>(); // Index for fast edge lookup
   private users = new Map<string, UserProfile>(); // User profiles by ID
   private usersByEmail = new Map<string, string>(); // Email -> User ID mapping
+  private adviceHistory = new Map<string, AdviceHistory>(); // History by ID
+  private historyByUser = new Map<string, string[]>(); // User ID -> History IDs
+  private favorites = new Map<string, UserFavorite>(); // Favorites by ID
+  private favoritesByUser = new Map<string, string[]>(); // User ID -> Favorite IDs
 
   private edgeKey(from: string, to: string, type: string): string {
     return `${from}:${to}:${type}`;
@@ -258,6 +264,204 @@ export class MemoryGraphStore implements GraphStore {
     for (const user of this.users.values()) {
       user.queriesThisMonth = 0;
     }
+  }
+
+  /**
+   * Save advice history
+   */
+  async saveAdviceHistory(history: AdviceHistory): Promise<void> {
+    // Check size limit
+    if (this.adviceHistory.size >= MemoryGraphStore.MAX_HISTORY && !this.adviceHistory.has(history.id)) {
+      throw new Error(`Memory store full: max ${MemoryGraphStore.MAX_HISTORY} history items`);
+    }
+
+    // Deep copy to prevent mutations
+    this.adviceHistory.set(history.id, structuredClone(history));
+
+    // Update user index
+    if (!this.historyByUser.has(history.userId)) {
+      this.historyByUser.set(history.userId, []);
+    }
+    this.historyByUser.get(history.userId)!.push(history.id);
+  }
+
+  /**
+   * Get advice history for a user
+   */
+  async getAdviceHistory(
+    userId: string,
+    limit = 20,
+    offset = 0
+  ): Promise<AdviceHistory[]> {
+    const historyIds = this.historyByUser.get(userId) || [];
+
+    // Get all history items for this user
+    const items = historyIds
+      .map(id => this.adviceHistory.get(id))
+      .filter((item): item is AdviceHistory => item !== undefined);
+
+    // Sort by timestamp descending
+    items.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+
+    // Apply pagination
+    return items.slice(offset, offset + limit).map(item => structuredClone(item));
+  }
+
+  /**
+   * Get a specific advice history item
+   */
+  async getAdviceHistoryItem(id: string): Promise<AdviceHistory | null> {
+    const item = this.adviceHistory.get(id);
+    return item ? structuredClone(item) : null;
+  }
+
+  /**
+   * Update advice rating
+   */
+  async updateAdviceRating(
+    id: string,
+    rating: number,
+    feedback?: string
+  ): Promise<void> {
+    const item = this.adviceHistory.get(id);
+    if (!item) {
+      throw new Error(`History item ${id} not found`);
+    }
+
+    item.rating = rating as 1 | 2 | 3 | 4 | 5;
+    if (feedback !== undefined) {
+      item.feedback = feedback;
+    }
+  }
+
+  /**
+   * Update advice helpful status
+   */
+  async updateAdviceHelpful(id: string, wasHelpful: boolean): Promise<void> {
+    const item = this.adviceHistory.get(id);
+    if (!item) {
+      throw new Error(`History item ${id} not found`);
+    }
+
+    item.wasHelpful = wasHelpful;
+  }
+
+  /**
+   * Delete a specific advice history item
+   */
+  async deleteAdviceHistory(id: string): Promise<void> {
+    const item = this.adviceHistory.get(id);
+    if (item) {
+      // Remove from user index
+      const userHistoryIds = this.historyByUser.get(item.userId);
+      if (userHistoryIds) {
+        const index = userHistoryIds.indexOf(id);
+        if (index > -1) {
+          userHistoryIds.splice(index, 1);
+        }
+      }
+      // Remove the item
+      this.adviceHistory.delete(id);
+    }
+  }
+
+  /**
+   * Delete all advice history for a user
+   */
+  async deleteAllAdviceHistory(userId: string): Promise<void> {
+    const historyIds = this.historyByUser.get(userId) || [];
+    for (const id of historyIds) {
+      this.adviceHistory.delete(id);
+    }
+    this.historyByUser.delete(userId);
+  }
+
+  /**
+   * Save a favorite
+   */
+  async saveFavorite(favorite: UserFavorite): Promise<void> {
+    // Check size limit
+    if (this.favorites.size >= MemoryGraphStore.MAX_FAVORITES && !this.favorites.has(favorite.id)) {
+      throw new Error(`Memory store full: max ${MemoryGraphStore.MAX_FAVORITES} favorites`);
+    }
+
+    // Deep copy to prevent mutations
+    this.favorites.set(favorite.id, structuredClone(favorite));
+
+    // Update user index
+    if (!this.favoritesByUser.has(favorite.userId)) {
+      this.favoritesByUser.set(favorite.userId, []);
+    }
+    this.favoritesByUser.get(favorite.userId)!.push(favorite.id);
+  }
+
+  /**
+   * Get favorites for a user
+   */
+  async getFavorites(userId: string, type?: string): Promise<UserFavorite[]> {
+    const favoriteIds = this.favoritesByUser.get(userId) || [];
+
+    // Get all favorites for this user
+    let items = favoriteIds
+      .map(id => this.favorites.get(id))
+      .filter((item): item is UserFavorite => item !== undefined);
+
+    // Filter by type if specified
+    if (type) {
+      items = items.filter(item => item.type === type);
+    }
+
+    // Sort by timestamp descending
+    items.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+
+    return items.map(item => structuredClone(item));
+  }
+
+  /**
+   * Get a specific favorite by ID
+   */
+  async getFavoriteById(id: string): Promise<UserFavorite | null> {
+    const favorite = this.favorites.get(id);
+    return favorite ? structuredClone(favorite) : null;
+  }
+
+  /**
+   * Delete a favorite
+   */
+  async deleteFavorite(id: string): Promise<void> {
+    const favorite = this.favorites.get(id);
+    if (favorite) {
+      // Remove from user index
+      const userFavoriteIds = this.favoritesByUser.get(favorite.userId);
+      if (userFavoriteIds) {
+        const index = userFavoriteIds.indexOf(id);
+        if (index > -1) {
+          userFavoriteIds.splice(index, 1);
+        }
+      }
+      // Remove the favorite
+      this.favorites.delete(id);
+    }
+  }
+
+  /**
+   * Check if a favorite exists
+   */
+  async checkFavoriteExists(
+    userId: string,
+    type: string,
+    referenceId: string
+  ): Promise<boolean> {
+    const favoriteIds = this.favoritesByUser.get(userId) || [];
+
+    for (const id of favoriteIds) {
+      const favorite = this.favorites.get(id);
+      if (favorite && favorite.type === type && favorite.referenceId === referenceId) {
+        return true;
+      }
+    }
+
+    return false;
   }
 }
 
