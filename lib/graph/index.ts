@@ -16,3 +16,6 @@ export function getGraphStore() {
 
   return require('./postgres').graphStore;
 }
+
+// Alias for convenience
+export const getStore = getGraphStore;
