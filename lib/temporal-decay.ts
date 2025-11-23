@@ -55,7 +55,10 @@ export function calculateDecay(vibe: Vibe, now: Date = new Date()): number {
   // Exponential decay formula
   const decayFactor = Math.pow(0.5, daysSinceLastSeen / halfLife);
 
-  return strength * decayFactor;
+  const relevance = strength * decayFactor;
+
+  // FIX: Apply floor to prevent tiny values that waste computation
+  return Math.max(relevance, 0.01);
 }
 
 /**
@@ -201,7 +204,13 @@ export function suggestHalfLife(vibe: Vibe): number {
  * Calculate semantic similarity between two vibes using embeddings
  */
 function cosineSimilarity(a: number[], b: number[]): number {
-  if (!a || !b || a.length !== b.length) return 0;
+  // Validate dimensional compatibility
+  if (!a || !b || a.length !== b.length) {
+    if (a && b && a.length !== b.length) {
+      console.warn(`[TemporalDecay] Dimension mismatch: ${a.length} vs ${b.length}`);
+    }
+    return 0;
+  }
 
   let dotProduct = 0;
   let normA = 0;
@@ -257,6 +266,23 @@ export function applyHaloEffect(
 
     // Skip vibes without embeddings
     if (!vibe.embedding) {
+      return vibe;
+    }
+
+    // FIX: Prevent cascading boosts within 24 hours
+    const lastHalo = vibe.metadata?.lastHaloBoost;
+    if (lastHalo) {
+      const hoursSinceLastHalo = (now.getTime() - new Date(lastHalo.timestamp).getTime())
+        / (1000 * 60 * 60);
+
+      if (hoursSinceLastHalo < 24) {
+        return vibe;  // Skip this vibe to prevent cascade
+      }
+    }
+
+    // Validate dimensional compatibility
+    if (vibe.embedding.length !== boostedVibe.embedding.length) {
+      console.warn(`[HaloEffect] Dimension mismatch for vibe ${vibe.id}`);
       return vibe;
     }
 

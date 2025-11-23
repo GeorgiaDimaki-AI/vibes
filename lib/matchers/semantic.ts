@@ -70,6 +70,14 @@ export class SemanticMatcher extends BaseMatcher {
   }
 
   private cosineSimilarity(a: number[], b: number[]): number {
+    // Validate dimensional compatibility
+    if (!a || !b || a.length !== b.length) {
+      if (a && b && a.length !== b.length) {
+        console.warn(`[SemanticMatcher] Dimension mismatch: ${a.length} vs ${b.length}`);
+      }
+      return 0;
+    }
+
     let dotProduct = 0;
     let normA = 0;
     let normB = 0;
