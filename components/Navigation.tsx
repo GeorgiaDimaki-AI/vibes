@@ -2,7 +2,7 @@
 
 import { useUser } from '@clerk/nextjs';
 import Link from 'next/link';
-import { Home, Network, User, History, Heart, LayoutDashboard, Menu, X } from 'lucide-react';
+import { Home, Network, User, History, Heart, LayoutDashboard, Menu, X, HelpCircle } from 'lucide-react';
 import { SignInButton } from './auth/SignInButton';
 import { UserMenu } from './auth/UserMenu';
 import { useState } from 'react';
@@ -38,6 +38,13 @@ export function Navigation() {
               <Network size={16} />
               Graph
             </Link>
+            <Link
+              href="/help"
+              className="inline-flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+            >
+              <HelpCircle size={16} />
+              Help
+            </Link>
 
             {isLoaded && isSignedIn && <UserMenu />}
             {isLoaded && !isSignedIn && <SignInButton />}
@@ -71,6 +78,14 @@ export function Navigation() {
             >
               <Network size={16} />
               Graph
+            </Link>
+            <Link
+              href="/help"
+              onClick={() => setMobileMenuOpen(false)}
+              className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+            >
+              <HelpCircle size={16} />
+              Help
             </Link>
 
             {isLoaded && isSignedIn && (
