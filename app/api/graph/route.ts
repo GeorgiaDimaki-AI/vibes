@@ -11,8 +11,21 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const region = searchParams.get('region') || undefined;
-    const minRelevance = parseFloat(searchParams.get('minRelevance') || '0.1');
     const category = searchParams.get('category') || undefined;
+
+    // SECURITY: Validate and bound minRelevance parameter
+    const minRelevanceParam = searchParams.get('minRelevance') || '0.1';
+    const parsedMinRelevance = parseFloat(minRelevanceParam);
+
+    if (isNaN(parsedMinRelevance)) {
+      return NextResponse.json(
+        { error: 'Invalid minRelevance parameter' },
+        { status: 400 }
+      );
+    }
+
+    // Clamp minRelevance between 0 and 1
+    const minRelevance = Math.min(Math.max(parsedMinRelevance, 0), 1);
 
     const store = (zeitgeist as any).store;
     let vibes = await store.getAllVibes();
@@ -101,8 +114,13 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     console.error('Failed to get graph:', error);
+    // SECURITY: Don't expose internal error details in production
+    const isProduction = process.env.NODE_ENV === 'production';
     return NextResponse.json(
-      { error: 'Failed to get graph data', details: error instanceof Error ? error.message : 'Unknown error' },
+      {
+        error: 'Failed to get graph data',
+        details: isProduction ? undefined : (error instanceof Error ? error.message : 'Unknown error'),
+      },
       { status: 500 }
     );
   }
