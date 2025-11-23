@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { Navigation } from '@/components/Navigation';
 import ForceGraph from '@/components/graph/ForceGraph';
 import GraphControls from '@/components/graph/GraphControls';
 
@@ -77,8 +78,10 @@ export default function GraphPage() {
   }, [fetchGraphData]);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <div className="container mx-auto px-4 py-8">
+    <>
+      <Navigation />
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <div className="container mx-auto px-4 py-8">
         <header className="mb-8">
           <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">
             Cultural Graph Visualization
@@ -137,5 +140,6 @@ export default function GraphPage() {
         </div>
       </div>
     </div>
+    </>
   );
 }

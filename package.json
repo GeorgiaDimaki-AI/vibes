@@ -18,10 +18,12 @@
     "@clerk/nextjs": "^6.35.4",
     "@vercel/postgres": "^0.10.0",
     "d3": "^7.9.0",
+    "lucide-react": "^0.554.0",
     "next": "16.0.3",
     "openai": "^6.9.1",
     "react": "19.2.0",
     "react-dom": "19.2.0",
+    "react-hot-toast": "^2.6.0",
     "zod": "^4.1.12"
   },
   "devDependencies": {

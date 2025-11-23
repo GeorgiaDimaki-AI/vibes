@@ -1,9 +1,15 @@
 'use client';
 
 import { useState } from 'react';
+import { useUser } from '@clerk/nextjs';
 import { Advice } from '@/lib/types';
+import { Navigation } from '@/components/Navigation';
+import { FavoriteButton } from '@/components/favorites/FavoriteButton';
+import Link from 'next/link';
+import { AlertCircle } from 'lucide-react';
 
 export default function Home() {
+  const { isSignedIn } = useUser();
   const [scenario, setScenario] = useState('');
   const [loading, setLoading] = useState(false);
   const [advice, setAdvice] = useState<Advice | null>(null);
@@ -23,6 +29,12 @@ export default function Home() {
       });
 
       if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error('Please sign in to get advice');
+        }
+        if (response.status === 429) {
+          throw new Error('You have reached your monthly query limit. Please upgrade your tier.');
+        }
         throw new Error('Failed to get advice');
       }
 
@@ -43,17 +55,25 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-blue-50 dark:from-gray-900 dark:via-black dark:to-gray-900">
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <h1 className="text-5xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent mb-2">
-            Zeitgeist
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400">
-            Your cultural advisor for any situation
-          </p>
-        </div>
+    <>
+      <Navigation />
+      <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-blue-50 dark:from-gray-900 dark:via-black dark:to-gray-900">
+        <div className="max-w-4xl mx-auto px-4 py-8">
+          {/* Header */}
+          <div className="text-center mb-8">
+            <h1 className="text-5xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent mb-2">
+              Zeitgeist
+            </h1>
+            <p className="text-gray-600 dark:text-gray-400">
+              Your cultural advisor for any situation
+            </p>
+            {!isSignedIn && (
+              <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-sm text-blue-800 dark:text-blue-200">
+                <AlertCircle size={16} />
+                Sign in to get personalized advice and track your history
+              </div>
+            )}
+          </div>
 
         {/* Input Section */}
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 mb-6">
@@ -239,5 +259,6 @@ export default function Home() {
         )}
       </div>
     </div>
+    </>
   );
 }
