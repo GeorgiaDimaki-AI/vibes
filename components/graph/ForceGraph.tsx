@@ -160,6 +160,12 @@ export default function ForceGraph({ data, width, height }: ForceGraphProps) {
     // Cleanup
     return () => {
       simulation.stop();
+      // Remove all event listeners to prevent memory leaks
+      svg.selectAll('*').on('.drag', null);
+      svg.selectAll('*').on('click', null);
+      svg.selectAll('*').on('mouseover', null);
+      svg.selectAll('*').on('mouseout', null);
+      svg.selectAll('*').remove();
     };
   }, [data, width, height]);
 
@@ -169,8 +175,16 @@ export default function ForceGraph({ data, width, height }: ForceGraphProps) {
         ref={svgRef}
         width={width}
         height={height}
+        role="img"
+        aria-label={`Cultural graph visualization showing ${data.nodes.length} vibes and their connections`}
         className="bg-gray-50 dark:bg-gray-900 rounded-lg"
-      />
+      >
+        <title>Cultural Graph Visualization</title>
+        <desc>
+          Interactive force-directed graph with {data.nodes.length} nodes representing cultural vibes,
+          connected by {data.edges.length} edges showing relationships. Click nodes for details.
+        </desc>
+      </svg>
 
       {/* Selected Node Details */}
       {selectedNode && (

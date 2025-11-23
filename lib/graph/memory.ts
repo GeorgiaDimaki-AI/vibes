@@ -6,6 +6,26 @@
 import { GraphStore } from './store';
 import { Vibe, CulturalGraph, GraphEdge } from '@/lib/types';
 
+/**
+ * Validate embedding dimensions and values
+ */
+function validateEmbedding(embedding: number[] | undefined): void {
+  if (!embedding) return;
+
+  const validDimensions = [768, 1536]; // Support Ollama (768) and OpenAI (1536)
+  if (!validDimensions.includes(embedding.length)) {
+    throw new Error(
+      `Invalid embedding dimension: ${embedding.length}. ` +
+      `Expected 768 (Ollama/nomic-embed-text) or 1536 (OpenAI/text-embedding-3-small)`
+    );
+  }
+
+  // Validate all values are valid numbers
+  if (!embedding.every(v => typeof v === 'number' && !isNaN(v) && isFinite(v))) {
+    throw new Error('Embedding contains invalid values (NaN or Infinity)');
+  }
+}
+
 export class MemoryGraphStore implements GraphStore {
   private static readonly MAX_VIBES = 100000; // Prevent unbounded memory growth
   private vibes = new Map<string, Vibe>();
@@ -17,6 +37,9 @@ export class MemoryGraphStore implements GraphStore {
   }
 
   async saveVibe(vibe: Vibe): Promise<void> {
+    // Validate embedding
+    validateEmbedding(vibe.embedding);
+
     // Check size limit
     if (this.vibes.size >= MemoryGraphStore.MAX_VIBES && !this.vibes.has(vibe.id)) {
       throw new Error(`Memory store full: max ${MemoryGraphStore.MAX_VIBES} vibes`);
@@ -111,6 +134,9 @@ export class MemoryGraphStore implements GraphStore {
   }
 
   async findVibesByEmbedding(embedding: number[], topK = 10): Promise<Vibe[]> {
+    // Validate query embedding
+    validateEmbedding(embedding);
+
     const vibesWithEmbeddings = Array.from(this.vibes.values())
       .filter(v => v.embedding && v.embedding.length === embedding.length);
 

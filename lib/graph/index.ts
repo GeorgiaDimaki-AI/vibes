@@ -2,7 +2,7 @@
  * Graph storage exports
  */
 
-export { GraphStore } from './store';
+export type { GraphStore } from './store';
 export { PostgresGraphStore, graphStore } from './postgres';
 export { MemoryGraphStore, memoryStore } from './memory';
 

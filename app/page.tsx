@@ -57,19 +57,30 @@ export default function Home() {
 
         {/* Input Section */}
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 mb-6">
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          <label
+            htmlFor="scenario-input"
+            className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+          >
             Describe your situation
           </label>
           <textarea
+            id="scenario-input"
             value={scenario}
             onChange={(e) => setScenario(e.target.value)}
             onKeyPress={handleKeyPress}
             placeholder="e.g., Dinner with tech friends at a trendy restaurant in downtown..."
+            aria-describedby="scenario-hint"
+            aria-invalid={error ? true : undefined}
             className="w-full h-32 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent dark:bg-gray-700 dark:text-white resize-none"
           />
+          <p id="scenario-hint" className="sr-only">
+            Describe the situation you need cultural advice for. Minimum 5 characters required.
+          </p>
           <button
             onClick={getAdvice}
             disabled={loading || !scenario.trim()}
+            aria-busy={loading}
+            aria-live="polite"
             className="mt-4 w-full bg-gradient-to-r from-purple-600 to-blue-600 text-white font-semibold py-3 px-6 rounded-lg hover:from-purple-700 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           >
             {loading ? 'Analyzing vibes...' : 'Get Advice'}

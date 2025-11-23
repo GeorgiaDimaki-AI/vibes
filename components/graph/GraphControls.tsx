@@ -50,12 +50,14 @@ export default function GraphControls({
       <div className="flex flex-wrap gap-6 items-end">
         {/* Region Filter */}
         <div className="flex-1 min-w-[200px]">
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          <label htmlFor="region-filter" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
             Region
           </label>
           <select
+            id="region-filter"
             value={selectedRegion}
             onChange={(e) => setSelectedRegion(e.target.value)}
+            aria-label="Filter vibes by region"
             className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
           >
             {regions.map((region) => (
@@ -68,12 +70,14 @@ export default function GraphControls({
 
         {/* Category Filter */}
         <div className="flex-1 min-w-[200px]">
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          <label htmlFor="category-filter" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
             Category
           </label>
           <select
+            id="category-filter"
             value={selectedCategory}
             onChange={(e) => setSelectedCategory(e.target.value)}
+            aria-label="Filter vibes by category"
             className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
           >
             {categories.map((cat) => (
@@ -86,16 +90,21 @@ export default function GraphControls({
 
         {/* Relevance Slider */}
         <div className="flex-1 min-w-[200px]">
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          <label htmlFor="relevance-slider" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
             Min Relevance: {(minRelevance * 100).toFixed(0)}%
           </label>
           <input
+            id="relevance-slider"
             type="range"
             min="0"
             max="1"
             step="0.05"
             value={minRelevance}
             onChange={(e) => setMinRelevance(parseFloat(e.target.value))}
+            aria-label={`Minimum relevance: ${(minRelevance * 100).toFixed(0)}%`}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(minRelevance * 100)}
             className="w-full h-2 bg-gray-200 dark:bg-gray-600 rounded-lg appearance-none cursor-pointer"
           />
         </div>

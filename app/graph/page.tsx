@@ -5,7 +5,7 @@
  * Interactive D3-based visualization of the cultural graph
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import ForceGraph from '@/components/graph/ForceGraph';
 import GraphControls from '@/components/graph/GraphControls';
 
@@ -46,7 +46,7 @@ export default function GraphPage() {
   const [minRelevance, setMinRelevance] = useState<number>(0.1);
   const [selectedCategory, setSelectedCategory] = useState<string>('');
 
-  const fetchGraphData = async () => {
+  const fetchGraphData = useCallback(async () => {
     setLoading(true);
     setError(null);
 
@@ -70,11 +70,11 @@ export default function GraphPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedRegion, minRelevance, selectedCategory]);
 
   useEffect(() => {
     fetchGraphData();
-  }, [selectedRegion, minRelevance, selectedCategory]);
+  }, [fetchGraphData]);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
