@@ -5,7 +5,7 @@
 
 import { sql } from '@vercel/postgres';
 import { GraphStore } from './store';
-import { Vibe, CulturalGraph, GraphEdge } from '@/lib/types';
+import { Vibe, CulturalGraph, GraphEdge, UserProfile } from '@/lib/types';
 
 /**
  * Validate embedding dimensions and values
@@ -50,6 +50,7 @@ function padEmbedding(embedding: number[] | undefined): number[] | null {
 export class PostgresGraphStore implements GraphStore {
   async initialize(): Promise<void> {
     await this.createTables();
+    await this.createUserTables();
   }
 
   private async createTables(): Promise<void> {
@@ -465,6 +466,175 @@ export class PostgresGraphStore implements GraphStore {
       currentRelevance: row.current_relevance || 0.5,
       halfLife: row.half_life,
       geography: row.geography || undefined,
+    };
+  }
+
+  /**
+   * Create user-related tables for multi-user support
+   */
+  private async createUserTables(): Promise<void> {
+    // Users table
+    await sql`
+      CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        email TEXT UNIQUE NOT NULL,
+        display_name TEXT,
+        avatar_url TEXT,
+        tier TEXT DEFAULT 'free' CHECK (tier IN ('free', 'light', 'regular', 'unlimited')),
+        queries_this_month INTEGER DEFAULT 0,
+        query_limit INTEGER DEFAULT 5,
+        region TEXT,
+        interests TEXT[],
+        avoid_topics TEXT[],
+        conversation_style TEXT DEFAULT 'casual' CHECK (conversation_style IN ('casual', 'professional', 'academic', 'friendly')),
+        email_notifications BOOLEAN DEFAULT true,
+        share_data_for_research BOOLEAN DEFAULT false,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        last_active TIMESTAMPTZ DEFAULT NOW(),
+        onboarding_completed BOOLEAN DEFAULT false
+      )
+    `;
+
+    // Indexes for users
+    await sql`CREATE INDEX IF NOT EXISTS idx_users_tier ON users(tier)`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_users_last_active ON users(last_active)`;
+  }
+
+  /**
+   * Save a user profile
+   */
+  async saveUser(user: UserProfile): Promise<void> {
+    try {
+      await sql`
+        INSERT INTO users (
+          id, email, display_name, avatar_url, tier,
+          queries_this_month, query_limit, region, interests, avoid_topics,
+          conversation_style, email_notifications, share_data_for_research,
+          created_at, last_active, onboarding_completed
+        ) VALUES (
+          ${user.id},
+          ${user.email},
+          ${user.displayName || null},
+          ${user.avatarUrl || null},
+          ${user.tier},
+          ${user.queriesThisMonth},
+          ${user.queryLimit},
+          ${user.region || null},
+          ${user.interests as any},
+          ${user.avoidTopics as any},
+          ${user.conversationStyle},
+          ${user.emailNotifications},
+          ${user.shareDataForResearch},
+          ${user.createdAt.toISOString()},
+          ${user.lastActive.toISOString()},
+          ${user.onboardingCompleted}
+        )
+        ON CONFLICT (id) DO UPDATE SET
+          email = EXCLUDED.email,
+          display_name = EXCLUDED.display_name,
+          avatar_url = EXCLUDED.avatar_url,
+          tier = EXCLUDED.tier,
+          queries_this_month = EXCLUDED.queries_this_month,
+          query_limit = EXCLUDED.query_limit,
+          region = EXCLUDED.region,
+          interests = EXCLUDED.interests,
+          avoid_topics = EXCLUDED.avoid_topics,
+          conversation_style = EXCLUDED.conversation_style,
+          email_notifications = EXCLUDED.email_notifications,
+          share_data_for_research = EXCLUDED.share_data_for_research,
+          last_active = EXCLUDED.last_active,
+          onboarding_completed = EXCLUDED.onboarding_completed
+      `;
+    } catch (error: any) {
+      console.error('Failed to save user:', {
+        userId: user.id,
+        email: user.email,
+        error: error.message,
+      });
+      throw new Error(`Failed to save user ${user.id}: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get a user by ID
+   */
+  async getUser(userId: string): Promise<UserProfile | null> {
+    const result = await sql`SELECT * FROM users WHERE id = ${userId}`;
+    if (result.rows.length === 0) return null;
+    return this.rowToUser(result.rows[0]);
+  }
+
+  /**
+   * Get a user by email
+   */
+  async getUserByEmail(email: string): Promise<UserProfile | null> {
+    const result = await sql`SELECT * FROM users WHERE email = ${email}`;
+    if (result.rows.length === 0) return null;
+    return this.rowToUser(result.rows[0]);
+  }
+
+  /**
+   * Update a user profile
+   */
+  async updateUser(userId: string, updates: Partial<UserProfile>): Promise<UserProfile> {
+    const existingUser = await this.getUser(userId);
+    if (!existingUser) {
+      throw new Error(`User ${userId} not found`);
+    }
+
+    const updatedUser: UserProfile = { ...existingUser, ...updates };
+    await this.saveUser(updatedUser);
+    return updatedUser;
+  }
+
+  /**
+   * Delete a user and all their data
+   */
+  async deleteUser(userId: string): Promise<void> {
+    // Foreign key constraints with CASCADE will handle deletion of related data
+    await sql`DELETE FROM users WHERE id = ${userId}`;
+  }
+
+  /**
+   * Increment query count for a user
+   */
+  async incrementQueryCount(userId: string): Promise<void> {
+    await sql`
+      UPDATE users
+      SET queries_this_month = queries_this_month + 1,
+          last_active = NOW()
+      WHERE id = ${userId}
+    `;
+  }
+
+  /**
+   * Reset monthly query counts for all users (cron job)
+   */
+  async resetMonthlyQueries(): Promise<void> {
+    await sql`UPDATE users SET queries_this_month = 0`;
+  }
+
+  /**
+   * Convert database row to UserProfile
+   */
+  private rowToUser(row: any): UserProfile {
+    return {
+      id: row.id,
+      email: row.email,
+      displayName: row.display_name || undefined,
+      avatarUrl: row.avatar_url || undefined,
+      tier: row.tier,
+      queriesThisMonth: row.queries_this_month,
+      queryLimit: row.query_limit,
+      region: row.region || undefined,
+      interests: row.interests || [],
+      avoidTopics: row.avoid_topics || [],
+      conversationStyle: row.conversation_style,
+      emailNotifications: row.email_notifications,
+      shareDataForResearch: row.share_data_for_research,
+      createdAt: new Date(row.created_at),
+      lastActive: new Date(row.last_active),
+      onboardingCompleted: row.onboarding_completed,
     };
   }
 }

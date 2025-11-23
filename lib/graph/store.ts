@@ -2,7 +2,7 @@
  * Graph Storage Interface and Implementations
  */
 
-import { Vibe, CulturalGraph, GraphEdge } from '@/lib/types';
+import { Vibe, CulturalGraph, GraphEdge, UserProfile } from '@/lib/types';
 
 /**
  * Interface for graph storage
@@ -28,4 +28,13 @@ export interface GraphStore {
   findVibesByKeywords(keywords: string[]): Promise<Vibe[]>;
   findVibesByEmbedding(embedding: number[], topK?: number): Promise<Vibe[]>;
   findRecentVibes(limit: number): Promise<Vibe[]>;
+
+  // User management operations (Multi-User Support)
+  saveUser(user: UserProfile): Promise<void>;
+  getUser(userId: string): Promise<UserProfile | null>;
+  getUserByEmail(email: string): Promise<UserProfile | null>;
+  updateUser(userId: string, updates: Partial<UserProfile>): Promise<UserProfile>;
+  deleteUser(userId: string): Promise<void>;
+  incrementQueryCount(userId: string): Promise<void>;
+  resetMonthlyQueries(): Promise<void>;
 }

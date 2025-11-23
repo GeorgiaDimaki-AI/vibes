@@ -248,7 +248,8 @@ export interface Matcher {
   readonly description: string;
 
   // Match a scenario to relevant vibes
-  match(scenario: Scenario, graph: CulturalGraph): Promise<VibeMatch[]>;
+  // userProfile is optional for personalized matching
+  match(scenario: Scenario, graph: CulturalGraph, userProfile?: UserProfile): Promise<VibeMatch[]>;
 }
 
 /**
@@ -274,4 +275,34 @@ export interface Config {
     provider: 'openai' | 'custom';
     model: string;
   };
+}
+
+/**
+ * User Profile for personalized matching (Multi-User Support)
+ */
+export interface UserProfile {
+  id: string;                      // UUID
+  email: string;                   // From auth provider
+  displayName?: string;
+  avatarUrl?: string;
+
+  // Tier & Usage
+  tier: 'free' | 'light' | 'regular' | 'unlimited';
+  queriesThisMonth: number;
+  queryLimit: number;              // Based on tier
+
+  // Preferences
+  region?: Region;                 // Primary region for filtering
+  interests: string[];             // ["tech", "fashion", "music"]
+  avoidTopics: string[];           // ["politics", "crypto"]
+  conversationStyle: 'casual' | 'professional' | 'academic' | 'friendly';
+
+  // Settings
+  emailNotifications: boolean;
+  shareDataForResearch: boolean;
+
+  // Metadata
+  createdAt: Date;
+  lastActive: Date;
+  onboardingCompleted: boolean;
 }

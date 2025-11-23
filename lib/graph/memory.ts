@@ -4,7 +4,7 @@
  */
 
 import { GraphStore } from './store';
-import { Vibe, CulturalGraph, GraphEdge } from '@/lib/types';
+import { Vibe, CulturalGraph, GraphEdge, UserProfile } from '@/lib/types';
 
 /**
  * Validate embedding dimensions and values
@@ -28,9 +28,12 @@ function validateEmbedding(embedding: number[] | undefined): void {
 
 export class MemoryGraphStore implements GraphStore {
   private static readonly MAX_VIBES = 100000; // Prevent unbounded memory growth
+  private static readonly MAX_USERS = 10000; // Prevent unbounded memory growth
   private vibes = new Map<string, Vibe>();
   private edges = new Map<string, GraphEdge>();
   private edgesByVibe = new Map<string, Set<string>>(); // Index for fast edge lookup
+  private users = new Map<string, UserProfile>(); // User profiles by ID
+  private usersByEmail = new Map<string, string>(); // Email -> User ID mapping
 
   private edgeKey(from: string, to: string, type: string): string {
     return `${from}:${to}:${type}`;
@@ -171,6 +174,90 @@ export class MemoryGraphStore implements GraphStore {
     if (denominator === 0) return 0;
 
     return dotProduct / denominator;
+  }
+
+  /**
+   * Save a user profile
+   */
+  async saveUser(user: UserProfile): Promise<void> {
+    // Check size limit
+    if (this.users.size >= MemoryGraphStore.MAX_USERS && !this.users.has(user.id)) {
+      throw new Error(`Memory store full: max ${MemoryGraphStore.MAX_USERS} users`);
+    }
+
+    // Update email index if email changed
+    const existingUser = this.users.get(user.id);
+    if (existingUser && existingUser.email !== user.email) {
+      this.usersByEmail.delete(existingUser.email);
+    }
+
+    // Deep copy to prevent mutations
+    this.users.set(user.id, structuredClone(user));
+    this.usersByEmail.set(user.email, user.id);
+  }
+
+  /**
+   * Get a user by ID
+   */
+  async getUser(userId: string): Promise<UserProfile | null> {
+    const user = this.users.get(userId);
+    return user ? structuredClone(user) : null;
+  }
+
+  /**
+   * Get a user by email
+   */
+  async getUserByEmail(email: string): Promise<UserProfile | null> {
+    const userId = this.usersByEmail.get(email);
+    if (!userId) return null;
+    return this.getUser(userId);
+  }
+
+  /**
+   * Update a user profile
+   */
+  async updateUser(userId: string, updates: Partial<UserProfile>): Promise<UserProfile> {
+    const existingUser = await this.getUser(userId);
+    if (!existingUser) {
+      throw new Error(`User ${userId} not found`);
+    }
+
+    const updatedUser: UserProfile = { ...existingUser, ...updates };
+    await this.saveUser(updatedUser);
+    return updatedUser;
+  }
+
+  /**
+   * Delete a user and all their data
+   */
+  async deleteUser(userId: string): Promise<void> {
+    const user = this.users.get(userId);
+    if (user) {
+      this.usersByEmail.delete(user.email);
+      this.users.delete(userId);
+    }
+  }
+
+  /**
+   * Increment query count for a user
+   */
+  async incrementQueryCount(userId: string): Promise<void> {
+    const user = this.users.get(userId);
+    if (!user) {
+      throw new Error(`User ${userId} not found`);
+    }
+
+    user.queriesThisMonth += 1;
+    user.lastActive = new Date();
+  }
+
+  /**
+   * Reset monthly query counts for all users (cron job)
+   */
+  async resetMonthlyQueries(): Promise<void> {
+    for (const user of this.users.values()) {
+      user.queriesThisMonth = 0;
+    }
   }
 }
 
