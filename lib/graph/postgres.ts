@@ -959,3 +959,12 @@ export class PostgresGraphStore implements GraphStore {
 
 // Global store instance
 export const graphStore = new PostgresGraphStore();
+
+// Initialize tables on module load (only in server environment)
+if (typeof window === 'undefined' && process.env.POSTGRES_URL) {
+  graphStore.initialize().catch((error) => {
+    console.error('Failed to initialize Postgres tables:', error);
+    console.error('This may cause issues with user authentication and data storage.');
+    console.error('Please check your POSTGRES_URL and database permissions.');
+  });
+}
