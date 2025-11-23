@@ -7,11 +7,23 @@ import { GraphStore } from './store';
 import { Vibe, CulturalGraph, GraphEdge } from '@/lib/types';
 
 export class MemoryGraphStore implements GraphStore {
+  private static readonly MAX_VIBES = 100000; // Prevent unbounded memory growth
   private vibes = new Map<string, Vibe>();
-  private edges: GraphEdge[] = [];
+  private edges = new Map<string, GraphEdge>();
+  private edgesByVibe = new Map<string, Set<string>>(); // Index for fast edge lookup
+
+  private edgeKey(from: string, to: string, type: string): string {
+    return `${from}:${to}:${type}`;
+  }
 
   async saveVibe(vibe: Vibe): Promise<void> {
-    this.vibes.set(vibe.id, { ...vibe });
+    // Check size limit
+    if (this.vibes.size >= MemoryGraphStore.MAX_VIBES && !this.vibes.has(vibe.id)) {
+      throw new Error(`Memory store full: max ${MemoryGraphStore.MAX_VIBES} vibes`);
+    }
+
+    // Deep copy to prevent mutations
+    this.vibes.set(vibe.id, structuredClone(vibe));
   }
 
   async saveVibes(vibes: Vibe[]): Promise<void> {
@@ -21,39 +33,62 @@ export class MemoryGraphStore implements GraphStore {
   }
 
   async getVibe(id: string): Promise<Vibe | null> {
-    return this.vibes.get(id) || null;
+    const vibe = this.vibes.get(id);
+    return vibe ? structuredClone(vibe) : null;
   }
 
   async getAllVibes(): Promise<Vibe[]> {
-    return Array.from(this.vibes.values());
+    return Array.from(this.vibes.values()).map(v => structuredClone(v));
   }
 
   async deleteVibe(id: string): Promise<void> {
     this.vibes.delete(id);
-    this.edges = this.edges.filter(e => e.from !== id && e.to !== id);
+
+    // Delete associated edges efficiently using index
+    const edgeKeys = this.edgesByVibe.get(id) || new Set();
+    for (const key of edgeKeys) {
+      const edge = this.edges.get(key);
+      if (edge) {
+        // Remove from both vibe indexes
+        this.edgesByVibe.get(edge.from)?.delete(key);
+        this.edgesByVibe.get(edge.to)?.delete(key);
+        this.edges.delete(key);
+      }
+    }
+    this.edgesByVibe.delete(id);
   }
 
   async saveEdge(edge: GraphEdge): Promise<void> {
-    const idx = this.edges.findIndex(
-      e => e.from === edge.from && e.to === edge.to && e.type === edge.type
-    );
+    const key = this.edgeKey(edge.from, edge.to, edge.type);
+    this.edges.set(key, edge);
 
-    if (idx >= 0) {
-      this.edges[idx] = edge;
-    } else {
-      this.edges.push(edge);
+    // Maintain reverse index for fast lookups by vibe ID
+    if (!this.edgesByVibe.has(edge.from)) {
+      this.edgesByVibe.set(edge.from, new Set());
     }
+    if (!this.edgesByVibe.has(edge.to)) {
+      this.edgesByVibe.set(edge.to, new Set());
+    }
+    this.edgesByVibe.get(edge.from)!.add(key);
+    this.edgesByVibe.get(edge.to)!.add(key);
   }
 
   async getEdges(vibeId?: string): Promise<GraphEdge[]> {
-    if (!vibeId) return [...this.edges];
-    return this.edges.filter(e => e.from === vibeId || e.to === vibeId);
+    if (!vibeId) {
+      return Array.from(this.edges.values());
+    }
+
+    // Use index for fast lookup - O(1) instead of O(n)
+    const edgeKeys = this.edgesByVibe.get(vibeId) || new Set();
+    return Array.from(edgeKeys)
+      .map(key => this.edges.get(key))
+      .filter((e): e is GraphEdge => e !== undefined);
   }
 
   async getGraph(): Promise<CulturalGraph> {
     return {
       vibes: new Map(this.vibes),
-      edges: [...this.edges],
+      edges: Array.from(this.edges.values()),
       metadata: {
         lastUpdated: new Date(),
         vibeCount: this.vibes.size,
@@ -64,7 +99,8 @@ export class MemoryGraphStore implements GraphStore {
 
   async clearGraph(): Promise<void> {
     this.vibes.clear();
-    this.edges = [];
+    this.edges.clear();
+    this.edgesByVibe.clear();
   }
 
   async findVibesByKeywords(keywords: string[]): Promise<Vibe[]> {

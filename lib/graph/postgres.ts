@@ -265,8 +265,12 @@ export class PostgresGraphStore implements GraphStore {
   }
 
   async deleteVibe(id: string): Promise<void> {
-    await sql`DELETE FROM vibes WHERE id = ${id}`;
-    await sql`DELETE FROM edges WHERE from_vibe = ${id} OR to_vibe = ${id}`;
+    // With foreign key constraints ON DELETE CASCADE, edges are automatically deleted
+    // But we keep explicit edge deletion for compatibility with databases where constraints might not exist
+    await sql.begin(async (tx) => {
+      await tx`DELETE FROM edges WHERE from_vibe = ${id} OR to_vibe = ${id}`;
+      await tx`DELETE FROM vibes WHERE id = ${id}`;
+    });
   }
 
   async saveEdge(edge: GraphEdge): Promise<void> {
@@ -307,7 +311,8 @@ export class PostgresGraphStore implements GraphStore {
   }
 
   async clearGraph(): Promise<void> {
-    await sql`TRUNCATE vibes, edges`;
+    // CASCADE ensures referential integrity is maintained
+    await sql`TRUNCATE vibes CASCADE`;
   }
 
   async findVibesByKeywords(keywords: string[]): Promise<Vibe[]> {
