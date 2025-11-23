@@ -3,6 +3,10 @@
     {
       "path": "/api/cron",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/aggregate-analytics",
+      "schedule": "0 0 1 * *"
     }
   ]
 }

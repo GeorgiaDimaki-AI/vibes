@@ -5,6 +5,7 @@
 
 import { GraphStore } from './store';
 import { Vibe, CulturalGraph, GraphEdge, UserProfile, AdviceHistory, UserFavorite } from '@/lib/types';
+import { UsageMetrics } from '@/lib/users/analytics-service';
 
 /**
  * Validate embedding dimensions and values
@@ -40,6 +41,7 @@ export class MemoryGraphStore implements GraphStore {
   private historyByUser = new Map<string, string[]>(); // User ID -> History IDs
   private favorites = new Map<string, UserFavorite>(); // Favorites by ID
   private favoritesByUser = new Map<string, string[]>(); // User ID -> Favorite IDs
+  private usageMetrics = new Map<string, UsageMetrics>(); // Key: userId:month
 
   private edgeKey(from: string, to: string, type: string): string {
     return `${from}:${to}:${type}`;
@@ -462,6 +464,47 @@ export class MemoryGraphStore implements GraphStore {
     }
 
     return false;
+  }
+
+  /**
+   * Save usage metrics (UPSERT)
+   */
+  async saveUsageMetrics(metrics: UsageMetrics): Promise<void> {
+    const key = `${metrics.userId}:${metrics.month}`;
+    this.usageMetrics.set(key, structuredClone(metrics));
+  }
+
+  /**
+   * Get usage metrics for a specific month
+   */
+  async getUsageMetrics(userId: string, month: string): Promise<UsageMetrics | null> {
+    const key = `${userId}:${month}`;
+    const metrics = this.usageMetrics.get(key);
+    return metrics ? structuredClone(metrics) : null;
+  }
+
+  /**
+   * Get usage metrics for a date range
+   */
+  async getUsageMetricsRange(
+    userId: string,
+    startMonth: string,
+    endMonth: string
+  ): Promise<UsageMetrics[]> {
+    const result: UsageMetrics[] = [];
+
+    for (const [key, metrics] of this.usageMetrics.entries()) {
+      if (metrics.userId === userId &&
+          metrics.month >= startMonth &&
+          metrics.month <= endMonth) {
+        result.push(structuredClone(metrics));
+      }
+    }
+
+    // Sort by month
+    result.sort((a, b) => a.month.localeCompare(b.month));
+
+    return result;
   }
 }
 

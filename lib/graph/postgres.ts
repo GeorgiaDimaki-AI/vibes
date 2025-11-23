@@ -6,6 +6,7 @@
 import { sql } from '@vercel/postgres';
 import { GraphStore } from './store';
 import { Vibe, CulturalGraph, GraphEdge, UserProfile, AdviceHistory, UserFavorite } from '@/lib/types';
+import { UsageMetrics } from '@/lib/users/analytics-service';
 
 /**
  * Validate embedding dimensions and values
@@ -498,6 +499,23 @@ export class PostgresGraphStore implements GraphStore {
     // Indexes for users
     await sql`CREATE INDEX IF NOT EXISTS idx_users_tier ON users(tier)`;
     await sql`CREATE INDEX IF NOT EXISTS idx_users_last_active ON users(last_active)`;
+
+    // Create usage_metrics table
+    await sql`
+      CREATE TABLE IF NOT EXISTS usage_metrics (
+        user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+        month TEXT NOT NULL,
+        queries_count INTEGER DEFAULT 0,
+        top_regions_queried JSONB,
+        top_interest_matches JSONB,
+        average_rating REAL,
+        PRIMARY KEY (user_id, month)
+      )
+    `;
+
+    // Index for metrics queries
+    await sql`CREATE INDEX IF NOT EXISTS idx_usage_metrics_user ON usage_metrics(user_id)`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_usage_metrics_month ON usage_metrics(month)`;
   }
 
   /**
@@ -855,6 +873,86 @@ export class PostgresGraphStore implements GraphStore {
       timestamp: new Date(row.timestamp),
       note: row.note || undefined,
       // Note: metadata is populated by the service layer, not stored in DB
+    };
+  }
+
+  /**
+   * Save usage metrics (UPSERT)
+   */
+  async saveUsageMetrics(metrics: UsageMetrics): Promise<void> {
+    try {
+      await sql`
+        INSERT INTO usage_metrics (
+          user_id, month, queries_count, top_regions_queried,
+          top_interest_matches, average_rating
+        ) VALUES (
+          ${metrics.userId},
+          ${metrics.month},
+          ${metrics.queriesCount},
+          ${JSON.stringify(metrics.topRegionsQueried)},
+          ${JSON.stringify(metrics.topInterestMatches)},
+          ${metrics.averageRating || null}
+        )
+        ON CONFLICT (user_id, month) DO UPDATE SET
+          queries_count = EXCLUDED.queries_count,
+          top_regions_queried = EXCLUDED.top_regions_queried,
+          top_interest_matches = EXCLUDED.top_interest_matches,
+          average_rating = EXCLUDED.average_rating
+      `;
+    } catch (error: any) {
+      console.error('Failed to save usage metrics:', {
+        userId: metrics.userId,
+        month: metrics.month,
+        error: error.message,
+      });
+      throw new Error(`Failed to save usage metrics: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get usage metrics for a specific month
+   */
+  async getUsageMetrics(userId: string, month: string): Promise<UsageMetrics | null> {
+    const result = await sql`
+      SELECT * FROM usage_metrics
+      WHERE user_id = ${userId} AND month = ${month}
+    `;
+
+    if (result.rows.length === 0) return null;
+
+    return this.rowToUsageMetrics(result.rows[0]);
+  }
+
+  /**
+   * Get usage metrics for a date range
+   */
+  async getUsageMetricsRange(
+    userId: string,
+    startMonth: string,
+    endMonth: string
+  ): Promise<UsageMetrics[]> {
+    const result = await sql`
+      SELECT * FROM usage_metrics
+      WHERE user_id = ${userId}
+        AND month >= ${startMonth}
+        AND month <= ${endMonth}
+      ORDER BY month ASC
+    `;
+
+    return result.rows.map(row => this.rowToUsageMetrics(row));
+  }
+
+  /**
+   * Convert database row to UsageMetrics
+   */
+  private rowToUsageMetrics(row: any): UsageMetrics {
+    return {
+      userId: row.user_id,
+      month: row.month,
+      queriesCount: row.queries_count,
+      topRegionsQueried: row.top_regions_queried || {},
+      topInterestMatches: row.top_interest_matches || {},
+      averageRating: row.average_rating || undefined,
     };
   }
 }

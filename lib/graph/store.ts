@@ -3,6 +3,7 @@
  */
 
 import { Vibe, CulturalGraph, GraphEdge, UserProfile, AdviceHistory, UserFavorite } from '@/lib/types';
+import { UsageMetrics } from '@/lib/users/analytics-service';
 
 /**
  * Interface for graph storage
@@ -53,4 +54,9 @@ export interface GraphStore {
   getFavoriteById(id: string): Promise<UserFavorite | null>;
   deleteFavorite(id: string): Promise<void>;
   checkFavoriteExists(userId: string, type: string, referenceId: string): Promise<boolean>;
+
+  // Analytics operations
+  saveUsageMetrics(metrics: UsageMetrics): Promise<void>;
+  getUsageMetrics(userId: string, month: string): Promise<UsageMetrics | null>;
+  getUsageMetricsRange(userId: string, startMonth: string, endMonth: string): Promise<UsageMetrics[]>;
 }
